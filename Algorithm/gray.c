@@ -12,7 +12,7 @@
 #define GRAY_REG_NORMALIZE_ENABLE  (0xCFU)
 #define GRAY_ENABLE_ALL_CHANNELS   (0xFFU)
 #define GRAY_CHANNEL_COUNT         (8U)
-#define GRAY_PING_MAX_TRIES        (50U)
+#define GRAY_PING_MAX_TRIES        (5U)
 #define GRAY_I2C_TIMEOUT           (100000UL)
 
 #if !defined(I2C_0_INST)
@@ -28,6 +28,10 @@ volatile uint8_t gray_ce_readback = 0U;
 volatile uint8_t gray_cf_readback = 0U;
 volatile uint8_t gray_read_ok = 0U;
 volatile uint8_t gray_last_cmd = 0U;
+volatile uint8_t gray_fail_step = 0U;
+volatile uint32_t gray_task_count = 0U;
+volatile uint32_t gray_read_count = 0U;
+volatile uint32_t gray_read_fail_count = 0U;
 volatile uint8_t gray_value_0 = 0U;
 volatile uint8_t gray_value_1 = 0U;
 volatile uint8_t gray_value_2 = 0U;
@@ -74,10 +78,12 @@ static int Gray_I2C_WaitBusFree(void)
 static int Gray_I2C_WriteBytes(const uint8_t *buffer, uint8_t length)
 {
     if (buffer == 0 || length == 0U) {
+        gray_fail_step = 1U;
         return 0;
     }
 
     if (!Gray_I2C_WaitIdle()) {
+        gray_fail_step = 2U;
         return 0;
     }
 
@@ -87,16 +93,23 @@ static int Gray_I2C_WriteBytes(const uint8_t *buffer, uint8_t length)
     DL_I2C_startControllerTransfer(GRAY_I2C_INST, GRAY_I2C_ADDR,
         DL_I2C_CONTROLLER_DIRECTION_TX, length);
 
-    return Gray_I2C_WaitBusFree();
+    if (!Gray_I2C_WaitBusFree()) {
+        gray_fail_step = 3U;
+        return 0;
+    }
+
+    return 1;
 }
 
 static int Gray_I2C_ReadBytes(uint8_t *buffer, uint8_t length)
 {
     if (buffer == 0 || length == 0U) {
+        gray_fail_step = 4U;
         return 0;
     }
 
     if (!Gray_I2C_WaitIdle()) {
+        gray_fail_step = 5U;
         return 0;
     }
 
@@ -109,6 +122,7 @@ static int Gray_I2C_ReadBytes(uint8_t *buffer, uint8_t length)
 
         while (DL_I2C_isControllerRXFIFOEmpty(GRAY_I2C_INST)) {
             if (timeout-- == 0U) {
+                gray_fail_step = 6U;
                 return 0;
             }
         }
@@ -116,7 +130,12 @@ static int Gray_I2C_ReadBytes(uint8_t *buffer, uint8_t length)
         buffer[i] = DL_I2C_receiveControllerData(GRAY_I2C_INST);
     }
 
-    return Gray_I2C_WaitBusFree();
+    if (!Gray_I2C_WaitBusFree()) {
+        gray_fail_step = 7U;
+        return 0;
+    }
+
+    return 1;
 }
 
 static int Gray_WriteCommand(uint8_t command)
@@ -164,6 +183,10 @@ void Gray_Init(void)
     gray_cf_readback = 0U;
     gray_read_ok = 0U;
     gray_last_cmd = 0U;
+    gray_fail_step = 0U;
+    gray_task_count = 0U;
+    gray_read_count = 0U;
+    gray_read_fail_count = 0U;
     gray_value_0 = 0U;
     gray_value_1 = 0U;
     gray_value_2 = 0U;
@@ -210,9 +233,12 @@ void Gray_Task(void)
 {
     uint8_t raw[GRAY_CHANNEL_COUNT] = {0U};
 
+    gray_task_count++;
     gray_read_ok = 0U;
+    gray_fail_step = 0U;
 
     if (!Gray_CommandRead(GRAY_CMD_READ_ANALOG, raw, GRAY_CHANNEL_COUNT)) {
+        gray_read_fail_count++;
         return;
     }
 
@@ -225,4 +251,5 @@ void Gray_Task(void)
     gray_value_6 = raw[6];
     gray_value_7 = raw[7];
     gray_read_ok = 1U;
+    gray_read_count++;
 }
