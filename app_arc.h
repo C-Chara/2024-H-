@@ -5,11 +5,15 @@
 
 #include "app_route.h"
 
-extern volatile uint8_t arc_active;
-extern volatile uint8_t arc_done_flag;
+#define ARC_STATE_IDLE      (0U)
+#define ARC_STATE_RUN       (1U)
+#define ARC_STATE_DONE      (2U)
+#define ARC_STATE_LOST      (3U)
+
+extern volatile uint8_t arc_state;
 extern volatile float arc_distance_cm;
-extern volatile float arc_target_length_cm;
-extern volatile uint16_t arc_line_confidence;
+extern volatile int16_t arc_left_cmd;
+extern volatile int16_t arc_right_cmd;
 
 void AppArc_Init(void);
 void AppArc_Start(const AppRouteSegment *segment);

@@ -6,6 +6,9 @@
 extern volatile int16_t line_error;
 extern volatile uint8_t line_found;
 extern volatile uint16_t line_confidence;
+extern volatile uint16_t line_dark_sum;
+extern volatile uint8_t black_detected;
+extern volatile uint8_t white_detected;
 
 void AppLine_Init(void);
 void AppLine_Task(void);

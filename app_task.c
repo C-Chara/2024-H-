@@ -1,39 +1,65 @@
 #include "app_task.h"
 
-#include "alert.h"
-#include "app_mode.h"
 #include "app_route.h"
-#include "app_runner.h"
+
+volatile uint8_t task1_state = TASK1_IDLE;
+volatile float task1_distance_cm = 0.0f;
+volatile float task1_target_yaw = 0.0f;
+volatile float task1_heading_error = 0.0f;
+volatile int16_t task1_base_cmd = 0;
+volatile int16_t task1_turn_cmd = 0;
+volatile int16_t task1_left_cmd = 0;
+volatile int16_t task1_right_cmd = 0;
+volatile uint8_t task1_black_detected = 0U;
+volatile uint8_t task1_black_confirm_count = 0U;
+volatile uint8_t task1_done = 0U;
+volatile uint8_t task1_finish_reason = 0U;
 
 void AppTask_Init(void)
 {
-    AppRoute_Init();
-    AppRunner_Init();
+    task1_state = TASK1_IDLE;
+    task1_distance_cm = 0.0f;
+    task1_target_yaw = 0.0f;
+    task1_heading_error = 0.0f;
+    task1_base_cmd = 0;
+    task1_turn_cmd = 0;
+    task1_left_cmd = 0;
+    task1_right_cmd = 0;
+    task1_black_detected = 0U;
+    task1_black_confirm_count = 0U;
+    task1_done = 0U;
+    task1_finish_reason = 0U;
 }
 
-uint8_t AppTask_Load(uint8_t task_id)
+void AppTask_ResetForStart(uint8_t task_id)
 {
-    return AppRoute_LoadTask(task_id);
+    (void)task_id;
+
+    task1_state = TASK1_IDLE;
+    task1_distance_cm = 0.0f;
+    task1_target_yaw = 0.0f;
+    task1_heading_error = 0.0f;
+    task1_base_cmd = 0;
+    task1_turn_cmd = 0;
+    task1_left_cmd = 0;
+    task1_right_cmd = 0;
+    task1_black_detected = 0U;
+    task1_black_confirm_count = 0U;
+    task1_done = 0U;
+    task1_finish_reason = 0U;
 }
 
-void AppTask_Start(void)
+void AppTask_MarkTask1Run(void)
 {
-    if (route_loaded != 0U) {
-        AppRunner_Start();
-        Alert_NodeHint(NODE_A);
-    }
+    task1_state = TASK1_RUN;
+    task1_black_detected = 0U;
+    task1_black_confirm_count = 0U;
+    task1_done = 0U;
+    task1_finish_reason = 0U;
 }
 
-void AppTask_Cancel(void)
+void AppTask_MarkTask1Done(void)
 {
-    AppRunner_Stop();
-    AppRoute_Clear();
-}
-
-void AppTask_Task(void)
-{
-    if (system_mode == SYS_RUN && run_finished != 0U) {
-        system_mode = SYS_FINISHED;
-        LED_Task_Off();
-    }
+    task1_state = TASK1_DONE;
+    task1_done = 1U;
 }

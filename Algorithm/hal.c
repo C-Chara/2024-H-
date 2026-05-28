@@ -2,6 +2,7 @@
 #include "sensor.h"
 #include "ti_msp_dl_config.h"
 #include "hal_board_config.h"
+#include "../encoder.h"
 
 #define HAL_I2C_TIMEOUT  100000UL
 
@@ -95,12 +96,12 @@ void HAL_Beep_Off(void)
 
 int32_t HAL_Get_Left_Encoder_Delta(void)
 {
-    return 0;
+    return Encoder_GetLeftDelta();
 }
 
 int32_t HAL_Get_Right_Encoder_Delta(void)
 {
-    return 0;
+    return Encoder_GetRightDelta();
 }
 
 void HAL_Sensor_Read_I2C(uint8_t *buffer, uint8_t length)

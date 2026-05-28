@@ -7,7 +7,7 @@ extern volatile uint8_t run_active;
 extern volatile uint8_t run_finished;
 
 void AppRunner_Init(void);
-void AppRunner_Start(void);
+uint8_t AppRunner_Start(uint8_t task_id);
 void AppRunner_Stop(void);
 void AppRunner_Task(void);
 
