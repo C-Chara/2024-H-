@@ -1,6 +1,7 @@
 #include "encoder.h"
 
 #include "app_config.h"
+#include "app_time.h"
 #include "ti_msp_dl_config.h"
 
 volatile int32_t encoder_left_total = 0;
@@ -12,6 +13,8 @@ volatile int32_t encoder_right_delta = 0;
 volatile float encoder_distance_cm = 0.0f;
 volatile uint32_t encoder_left_irq_count = 0U;
 volatile uint32_t encoder_right_irq_count = 0U;
+volatile uint8_t encoder_valid = 0U;
+volatile uint32_t encoder_last_update_tick = 0U;
 
 static int32_t Encoder_Abs32(int32_t value)
 {
@@ -32,6 +35,8 @@ static void Encoder_UpdateDistanceCache(void)
     avg_counts = ((float)left_abs + (float)right_abs) * 0.5f;
     encoder_distance_cm = avg_counts * WHEEL_CIRCUMFERENCE_CM /
         ENCODER_COUNTS_PER_REV;
+    encoder_valid = 1U;
+    encoder_last_update_tick = app_millis();
 }
 
 void Encoder_Init(void)
@@ -40,6 +45,8 @@ void Encoder_Init(void)
     encoder_right_total = 0;
     encoder_left_irq_count = 0U;
     encoder_right_irq_count = 0U;
+    encoder_valid = 0U;
+    encoder_last_update_tick = 0U;
     Encoder_ResetDistance();
 
 #if defined(ENCODER_GPIO_ENC1_A_PORT) && defined(ENCODER_GPIO_ENC1_A_PIN)

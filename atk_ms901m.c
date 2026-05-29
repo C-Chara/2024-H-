@@ -16,6 +16,15 @@ volatile uint32_t gyro_frame_checksum_error = 0U;
 volatile uint8_t gyro_last_frame_id = 0U;
 volatile uint8_t gyro_last_frame_type = 0U;
 volatile uint8_t gyro_last_frame_len = 0U;
+volatile uint32_t gyro_poll_count = 0U;
+volatile uint8_t gyro_latest_valid = 0U;
+
+static atk_ms901m_attitude_data_t s_latest_attitude;
+static uint8_t s_attitude_available = 0U;
+static atk_ms901m_frame_t s_frame;
+static uint8_t s_state = 0U;
+static uint8_t s_dat_index = 0U;
+static uint8_t s_checksum = 0U;
 
 static void Atk_DelayTick(void)
 {
@@ -49,6 +58,105 @@ static uint8_t Atk_ReadByteWithTimeout(uint8_t *byte, uint32_t *timeout)
     }
 
     return ATK_MS901M_ETIMEOUT;
+}
+
+static void Atk_UpdateAttitudeFromFrame(const atk_ms901m_frame_t *frame)
+{
+    s_latest_attitude.roll = (float)((int16_t)
+        (((uint16_t)frame->dat[1] << 8) | frame->dat[0])) /
+        32768.0f * 180.0f;
+    s_latest_attitude.pitch = (float)((int16_t)
+        (((uint16_t)frame->dat[3] << 8) | frame->dat[2])) /
+        32768.0f * 180.0f;
+    s_latest_attitude.yaw = (float)((int16_t)
+        (((uint16_t)frame->dat[5] << 8) | frame->dat[4])) /
+        32768.0f * 180.0f;
+
+    s_attitude_available = 1U;
+    gyro_latest_valid = 1U;
+    gyro_attitude_ok_count++;
+}
+
+static void Atk_PollParserFeed(uint8_t byte)
+{
+    switch (s_state) {
+        case 0:
+            if (byte == ATK_MS901M_FRAME_HEAD_L) {
+                s_frame.head_l = byte;
+                s_checksum = byte;
+                s_state = 1U;
+            }
+            break;
+
+        case 1:
+            if (byte == ATK_MS901M_FRAME_HEAD_UPLOAD_H ||
+                byte == ATK_MS901M_FRAME_HEAD_ACK_H) {
+                s_frame.head_h = byte;
+                s_checksum = (uint8_t)(s_checksum + byte);
+                s_state = 2U;
+            } else if (byte == ATK_MS901M_FRAME_HEAD_L) {
+                s_frame.head_l = byte;
+                s_checksum = byte;
+            } else {
+                s_state = 0U;
+            }
+            break;
+
+        case 2:
+            s_frame.id = byte;
+            s_checksum = (uint8_t)(s_checksum + byte);
+            s_state = 3U;
+            break;
+
+        case 3:
+            s_frame.len = byte;
+            gyro_last_frame_len = byte;
+            s_checksum = (uint8_t)(s_checksum + byte);
+            s_dat_index = 0U;
+
+            if (s_frame.len > ATK_MS901M_FRAME_DAT_MAX_LEN) {
+                s_state = 0U;
+            } else if (s_frame.len == 0U) {
+                s_state = 5U;
+            } else {
+                s_state = 4U;
+            }
+            break;
+
+        case 4:
+            s_frame.dat[s_dat_index] = byte;
+            s_dat_index++;
+            s_checksum = (uint8_t)(s_checksum + byte);
+            if (s_dat_index >= s_frame.len) {
+                s_state = 5U;
+            }
+            break;
+
+        case 5:
+            s_frame.sum = byte;
+            gyro_last_frame_id = s_frame.id;
+            gyro_last_frame_type = s_frame.head_h;
+            gyro_last_frame_len = s_frame.len;
+
+            if (s_checksum == s_frame.sum) {
+                gyro_frame_ok_count++;
+                if (s_frame.head_h == ATK_MS901M_FRAME_ID_TYPE_UPLOAD &&
+                    s_frame.id == ATK_MS901M_FRAME_ID_ATTITUDE &&
+                    s_frame.len == 6U) {
+                    Atk_UpdateAttitudeFromFrame(&s_frame);
+                }
+            } else {
+                gyro_frame_checksum_error++;
+            }
+
+            s_state = (byte == ATK_MS901M_FRAME_HEAD_L) ? 1U : 0U;
+            s_checksum = (byte == ATK_MS901M_FRAME_HEAD_L) ? byte : 0U;
+            break;
+
+        default:
+            s_state = 0U;
+            break;
+    }
 }
 
 uint8_t atk_ms901m_get_frame_by_id(atk_ms901m_frame_t *frame, uint8_t id,
@@ -233,6 +341,38 @@ uint8_t atk_ms901m_get_attitude(atk_ms901m_attitude_data_t *attitude_dat,
     return ATK_MS901M_EOK;
 }
 
+void atk_ms901m_poll(void)
+{
+    uint8_t byte;
+
+    gyro_poll_count++;
+    while (atk_ms901m_uart_read_byte(&byte) != 0U) {
+        gyro_rx_count++;
+        Atk_PollParserFeed(byte);
+    }
+}
+
+uint8_t atk_ms901m_attitude_available(void)
+{
+    return s_attitude_available;
+}
+
+uint8_t atk_ms901m_get_latest_attitude(atk_ms901m_attitude_data_t *att)
+{
+    if (att == 0) {
+        return ATK_MS901M_EINVAL;
+    }
+
+    if (s_attitude_available == 0U) {
+        return ATK_MS901M_ERROR;
+    }
+
+    *att = s_latest_attitude;
+    s_attitude_available = 0U;
+    gyro_latest_valid = 0U;
+    return ATK_MS901M_EOK;
+}
+
 uint8_t atk_ms901m_init(uint32_t baudrate)
 {
 #if defined(ATK_MS901M_FRAME_ID_REG_GYROFSR) && \
@@ -243,6 +383,9 @@ uint8_t atk_ms901m_init(uint32_t baudrate)
 
     gyro_ok = 0U;
     gyro_init_result = ATK_MS901M_ERROR;
+    s_attitude_available = 0U;
+    gyro_latest_valid = 0U;
+    s_state = 0U;
     atk_ms901m_uart_init(baudrate);
     atk_ms901m_uart_flush_rx();
 
@@ -284,6 +427,7 @@ uint8_t atk_ms901m_init(uint32_t baudrate)
     }
 
     gyro_init_result = 4U;
+    gyro_attitude_fail_count++;
     return ATK_MS901M_ERROR;
 #endif
 }

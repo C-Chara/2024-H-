@@ -9,10 +9,25 @@
 volatile uint8_t selected_task = 1U;
 volatile uint8_t system_mode = SYS_SELECT;
 
+static uint8_t start_pending = 0U;
+static uint8_t pending_task = 1U;
+
+static void AppMode_StartPendingTask(void)
+{
+    if (AppRunner_Start(pending_task) != 0U) {
+        system_mode = SYS_RUN;
+    } else {
+        system_mode = SYS_FAULT;
+    }
+    start_pending = 0U;
+}
+
 void AppMode_Init(void)
 {
     selected_task = 1U;
     system_mode = SYS_SELECT;
+    start_pending = 0U;
+    pending_task = 1U;
     Motor_Stop();
     LED_Task_Off();
     LED_ShowTask(selected_task);
@@ -22,8 +37,14 @@ void AppMode_Task(void)
 {
     if (system_mode == SYS_SELECT) {
         Motor_Stop();
-        LED_Task_Off();
         (void)Key_GetStartShortPress();
+
+        if (start_pending != 0U) {
+            if (AppEvent_IsBusy() == 0U) {
+                AppMode_StartPendingTask();
+            }
+            return;
+        }
 
         if (Key_GetModeShortPress() != 0U) {
             selected_task++;
@@ -32,16 +53,13 @@ void AppMode_Task(void)
             }
 
             LED_ShowTask(selected_task);
-            Beep(60U);
+            AppEvent_SelectHint();
         }
 
         if (Key_GetStartLongPress() != 0U) {
+            pending_task = selected_task;
+            start_pending = 1U;
             AppEvent_StartHint();
-            if (AppRunner_Start(selected_task) != 0U) {
-                system_mode = SYS_RUN;
-            } else {
-                system_mode = SYS_FAULT;
-            }
         }
 
         return;
@@ -54,7 +72,6 @@ void AppMode_Task(void)
 
         if (run_finished != 0U) {
             Motor_Stop();
-            LED_Task_Off();
             system_mode = SYS_FINISHED;
         }
 
@@ -63,24 +80,28 @@ void AppMode_Task(void)
 
     if (system_mode == SYS_FINISHED) {
         Motor_Stop();
-        LED_Task_Off();
         (void)Key_GetStartShortPress();
+
+        if (start_pending != 0U) {
+            if (AppEvent_IsBusy() == 0U) {
+                AppMode_StartPendingTask();
+            }
+            return;
+        }
 
         if (Key_GetModeShortPress() != 0U) {
             AppRunner_Stop();
+            start_pending = 0U;
             system_mode = SYS_SELECT;
             LED_ShowTask(selected_task);
-            Beep(60U);
+            AppEvent_SelectHint();
             return;
         }
 
         if (Key_GetStartLongPress() != 0U) {
+            pending_task = selected_task;
+            start_pending = 1U;
             AppEvent_StartHint();
-            if (AppRunner_Start(selected_task) != 0U) {
-                system_mode = SYS_RUN;
-            } else {
-                system_mode = SYS_FAULT;
-            }
         }
 
         return;
@@ -88,6 +109,5 @@ void AppMode_Task(void)
 
     if (system_mode == SYS_FAULT) {
         Motor_Stop();
-        LED_Task_Off();
     }
 }

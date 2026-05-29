@@ -51,6 +51,8 @@ extern volatile uint32_t gyro_frame_checksum_error;
 extern volatile uint8_t gyro_last_frame_id;
 extern volatile uint8_t gyro_last_frame_type;
 extern volatile uint8_t gyro_last_frame_len;
+extern volatile uint32_t gyro_poll_count;
+extern volatile uint8_t gyro_latest_valid;
 
 uint8_t atk_ms901m_init(uint32_t baudrate);
 uint8_t atk_ms901m_read_reg_by_id(uint8_t id, uint8_t *dat, uint32_t timeout);
@@ -60,5 +62,8 @@ uint8_t atk_ms901m_get_frame_by_id(atk_ms901m_frame_t *frame, uint8_t id,
     uint8_t frame_type, uint32_t timeout);
 uint8_t atk_ms901m_get_attitude(atk_ms901m_attitude_data_t *attitude_dat,
     uint32_t timeout);
+void atk_ms901m_poll(void);
+uint8_t atk_ms901m_attitude_available(void);
+uint8_t atk_ms901m_get_latest_attitude(atk_ms901m_attitude_data_t *att);
 
 #endif /* ATK_MS901M_H_ */

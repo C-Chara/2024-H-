@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include "app_time.h"
 #include "ti_msp_dl_config.h"
 
 #define GRAY_I2C_ADDR              (0x4CU)
@@ -13,7 +14,8 @@
 #define GRAY_ENABLE_ALL_CHANNELS   (0xFFU)
 #define GRAY_CHANNEL_COUNT         (8U)
 #define GRAY_PING_MAX_TRIES        (5U)
-#define GRAY_I2C_TIMEOUT           (100000UL)
+#define GRAY_I2C_TIMEOUT           (5000UL)
+#define GRAY_POLL_PERIOD_MS        (5U)
 
 #if !defined(I2C_0_INST)
 /* Check ti_msp_dl_config.h for the real SysConfig I2C instance macro name. */
@@ -32,6 +34,11 @@ volatile uint8_t gray_fail_step = 0U;
 volatile uint32_t gray_task_count = 0U;
 volatile uint32_t gray_read_count = 0U;
 volatile uint32_t gray_read_fail_count = 0U;
+volatile uint8_t gray_valid = 0U;
+volatile uint32_t gray_last_update_tick = 0U;
+volatile uint32_t gray_poll_count = 0U;
+volatile uint32_t gray_i2c_error_count = 0U;
+volatile uint8_t gray_new_data_ready = 0U;
 volatile uint8_t gray_value_0 = 0U;
 volatile uint8_t gray_value_1 = 0U;
 volatile uint8_t gray_value_2 = 0U;
@@ -187,6 +194,11 @@ void Gray_Init(void)
     gray_task_count = 0U;
     gray_read_count = 0U;
     gray_read_fail_count = 0U;
+    gray_valid = 0U;
+    gray_last_update_tick = 0U;
+    gray_poll_count = 0U;
+    gray_i2c_error_count = 0U;
+    gray_new_data_ready = 0U;
     gray_value_0 = 0U;
     gray_value_1 = 0U;
     gray_value_2 = 0U;
@@ -239,6 +251,7 @@ void Gray_Task(void)
 
     if (!Gray_CommandRead(GRAY_CMD_READ_ANALOG, raw, GRAY_CHANNEL_COUNT)) {
         gray_read_fail_count++;
+        gray_i2c_error_count++;
         return;
     }
 
@@ -252,4 +265,39 @@ void Gray_Task(void)
     gray_value_7 = raw[7];
     gray_read_ok = 1U;
     gray_read_count++;
+    gray_valid = 1U;
+    gray_last_update_tick = app_millis();
+    gray_new_data_ready = 1U;
+}
+
+void gray_poll(void)
+{
+    static uint32_t last_poll_tick = 0U;
+    uint32_t now = app_millis();
+
+    gray_poll_count++;
+    if ((uint32_t)(now - last_poll_tick) < GRAY_POLL_PERIOD_MS) {
+        return;
+    }
+
+    last_poll_tick = now;
+    Gray_Task();
+}
+
+uint8_t gray_get_latest(uint8_t *buffer, uint8_t length)
+{
+    if (buffer == 0 || length < GRAY_CHANNEL_COUNT || gray_valid == 0U) {
+        return 0U;
+    }
+
+    buffer[0] = gray_value_0;
+    buffer[1] = gray_value_1;
+    buffer[2] = gray_value_2;
+    buffer[3] = gray_value_3;
+    buffer[4] = gray_value_4;
+    buffer[5] = gray_value_5;
+    buffer[6] = gray_value_6;
+    buffer[7] = gray_value_7;
+    gray_new_data_ready = 0U;
+    return 1U;
 }

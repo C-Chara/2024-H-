@@ -15,6 +15,8 @@ extern volatile int32_t encoder_right_delta;
 extern volatile float encoder_distance_cm;
 extern volatile uint32_t encoder_left_irq_count;
 extern volatile uint32_t encoder_right_irq_count;
+extern volatile uint8_t encoder_valid;
+extern volatile uint32_t encoder_last_update_tick;
 
 void Encoder_Init(void);
 void Encoder_ResetDistance(void);

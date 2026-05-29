@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include "app_time.h"
 #include "ti_msp_dl_config.h"
 
 #define KEY_DEBOUNCE_MS     (20U)
@@ -38,11 +39,6 @@ static Key_State key_start;
 static volatile uint8_t key_mode_short_event = 0U;
 static volatile uint8_t key_start_short_event = 0U;
 static volatile uint8_t key_start_long_event = 0U;
-
-static void Key_Delay1ms(void)
-{
-    DL_Common_delayCycles(CPUCLK_FREQ / 1000U);
-}
 
 static uint8_t Key_IsPressed(GPIO_Regs *port, uint32_t pin)
 {
@@ -111,7 +107,14 @@ void Key_Init(void)
 
 void Key_Task(void)
 {
-    Key_Delay1ms();
+    static uint32_t last_key_tick = 0U;
+    uint32_t now = app_millis();
+
+    if (now == last_key_tick) {
+        return;
+    }
+
+    last_key_tick = now;
     Key_Update(&key_mode, Key_IsPressed(KEY_MODE_PORT, KEY_MODE_PIN),
         &key_mode_short_event, 0);
     Key_Update(&key_start, Key_IsPressed(KEY_START_PORT, KEY_START_PIN),

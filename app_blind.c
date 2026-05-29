@@ -3,6 +3,7 @@
 #include "Algorithm/motor.h"
 #include "app_config.h"
 #include "app_line.h"
+#include "app_sensor.h"
 #include "app_task.h"
 #include "encoder.h"
 #include "gyro.h"
@@ -76,7 +77,8 @@ void AppBlind_Start(float target_distance_cm, float yaw_offset_deg)
 
     blind_distance_cm = 0.0f;
     blind_target_distance_cm = target_distance_cm;
-    blind_target_yaw = AppBlind_NormalizeAngle(gyro_yaw + yaw_offset_deg);
+    blind_target_yaw = AppBlind_NormalizeAngle(gyro_yaw_filtered +
+        yaw_offset_deg);
     blind_heading_error = 0.0f;
     blind_base_cmd = BLIND_FAST_SPEED;
     blind_turn_cmd = 0;
@@ -97,6 +99,7 @@ void AppBlind_Start(float target_distance_cm, float yaw_offset_deg)
         task1_turn_cmd = blind_turn_cmd;
         task1_left_cmd = blind_left_cmd;
         task1_right_cmd = blind_right_cmd;
+        AppTask_UpdateTask1RunStats();
     }
 }
 
@@ -156,7 +159,8 @@ void AppBlind_Task(void)
         return;
     }
 
-    blind_heading_error = AppBlind_NormalizeAngle(blind_target_yaw - gyro_yaw);
+    blind_heading_error = AppBlind_NormalizeAngle(blind_target_yaw -
+        gyro_yaw_filtered);
     d_error = blind_heading_error - blind_last_heading_error;
     blind_last_heading_error = blind_heading_error;
     turn_float = BLIND_KP_YAW * blind_heading_error +

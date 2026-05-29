@@ -20,10 +20,17 @@ extern volatile uint8_t task1_black_detected;
 extern volatile uint8_t task1_black_confirm_count;
 extern volatile uint8_t task1_done;
 extern volatile uint8_t task1_finish_reason;
+extern volatile uint8_t t1_test_done;
+extern volatile uint8_t t1_finish_reason;
+extern volatile float t1_final_distance_cm;
+extern volatile float t1_final_yaw;
+extern volatile int16_t t1_max_heading_error;
+extern volatile uint32_t t1_run_ticks;
 
 void AppTask_Init(void);
 void AppTask_ResetForStart(uint8_t task_id);
 void AppTask_MarkTask1Run(void);
 void AppTask_MarkTask1Done(void);
+void AppTask_UpdateTask1RunStats(void);
 
 #endif /* APP_TASK_H_ */

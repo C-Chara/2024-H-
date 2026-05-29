@@ -9,9 +9,8 @@ volatile uint16_t line_confidence = 0U;
 volatile uint16_t line_dark_sum = 0U;
 volatile uint8_t black_detected = 0U;
 volatile uint8_t white_detected = 0U;
-
-static uint8_t black_confirm_count = 0U;
-static uint8_t white_confirm_count = 0U;
+volatile uint8_t black_confirm_count = 0U;
+volatile uint8_t white_confirm_count = 0U;
 
 static const int16_t line_weights[8] = {
     -350, -250, -150, -50, 50, 150, 250, 350
