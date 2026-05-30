@@ -3,27 +3,52 @@
 
 #include <stdint.h>
 
-#define NODE_A                  (0U)
-#define NODE_B                  (1U)
-#define NODE_C                  (2U)
-#define NODE_D                  (3U)
+typedef enum {
+    NODE_NONE = 0,
+    NODE_A,
+    NODE_B,
+    NODE_C,
+    NODE_D
+} route_node_t;
 
-#define SEG_STRAIGHT_BLIND      (0U)
-#define SEG_DIAGONAL_BLIND      (1U)
-#define SEG_ARC_LINE            (2U)
-#define SEG_STOP_HINT           (3U)
+typedef enum {
+    SEG_NONE = 0,
+    SEG_BLIND,
+    SEG_LINE,
+    SEG_TURN_TO_YAW,
+    SEG_NODE_EVENT,
+    SEG_STOP
+} route_segment_type_t;
+
+typedef enum {
+    LINE_EXIT_BY_DISTANCE = 0,
+    LINE_EXIT_BY_NODE_BLACK,
+    LINE_EXIT_BY_DISTANCE_OR_NODE,
+    LINE_EXIT_BY_TIMEOUT
+} line_exit_mode_t;
+
+#define SEG_STRAIGHT_BLIND      SEG_BLIND
+#define SEG_DIAGONAL_BLIND      SEG_BLIND
+#define SEG_ARC_LINE            SEG_LINE
+#define SEG_STOP_HINT           SEG_STOP
 
 #define SEG_FLAG_TASK1_BLACK_STOP   (0x01U)
 
 typedef struct {
-    uint8_t type;
-    uint8_t from_node;
-    uint8_t to_node;
-    float target_distance_cm;
+    route_segment_type_t type;
+    route_node_t from_node;
+    route_node_t to_node;
+    float distance_cm;
     float yaw_offset_deg;
-    int8_t arc_dir;
+    float base_speed;
+    uint32_t timeout_ms;
+    line_exit_mode_t line_exit_mode;
+    float min_black_detect_cm;
+    uint8_t node_hint_enable;
     uint8_t flags;
-} AppRouteSegment;
+} route_segment_t;
+
+typedef route_segment_t AppRouteSegment;
 
 extern volatile uint8_t route_loaded;
 extern volatile uint8_t current_segment_index;

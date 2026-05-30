@@ -46,7 +46,7 @@ void AppArc_Start(const AppRouteSegment *segment)
     arc_distance_cm = 0.0f;
     arc_left_cmd = 0;
     arc_right_cmd = 0;
-    arc_target_length_cm = (segment != 0) ? segment->target_distance_cm : 0.0f;
+    arc_target_length_cm = (segment != 0) ? segment->distance_cm : 0.0f;
     arc_last_error = 0;
     arc_turn_cmd = 0;
     arc_lost_count = 0U;

@@ -5,6 +5,7 @@
 #include "app_line.h"
 #include "app_sensor.h"
 #include "app_task.h"
+#include "app_time.h"
 #include "encoder.h"
 #include "gyro.h"
 
@@ -22,6 +23,9 @@ static uint8_t blind_done = 0U;
 static uint8_t blind_task1_black_stop_enable = 0U;
 static uint8_t blind_next_task1_black_stop_enable = 0U;
 static float blind_last_heading_error = 0.0f;
+static int16_t blind_segment_base_speed = BLIND_FAST_SPEED;
+static uint32_t blind_timeout_ms = SEG_TIMEOUT_BLIND_MS;
+static uint32_t blind_start_tick = 0U;
 
 static float AppBlind_NormalizeAngle(float angle)
 {
@@ -64,6 +68,9 @@ void AppBlind_Init(void)
     blind_left_cmd = 0;
     blind_right_cmd = 0;
     blind_last_heading_error = 0.0f;
+    blind_segment_base_speed = BLIND_FAST_SPEED;
+    blind_timeout_ms = SEG_TIMEOUT_BLIND_MS;
+    blind_start_tick = 0U;
 }
 
 void AppBlind_EnableTask1BlackStop(uint8_t enable)
@@ -73,6 +80,21 @@ void AppBlind_EnableTask1BlackStop(uint8_t enable)
 
 void AppBlind_Start(float target_distance_cm, float yaw_offset_deg)
 {
+    blind_segment_base_speed = BLIND_FAST_SPEED;
+    blind_timeout_ms = SEG_TIMEOUT_BLIND_MS;
+    blind_start_tick = 0U;
+    AppBlind_StartSegment(&(AppRouteSegment) {
+        SEG_BLIND, NODE_NONE, NODE_NONE, target_distance_cm, yaw_offset_deg,
+        BLIND_FAST_SPEED, SEG_TIMEOUT_BLIND_MS, LINE_EXIT_BY_DISTANCE,
+        0.0f, 0U, 0U
+    });
+}
+
+void AppBlind_StartSegment(const AppRouteSegment *segment)
+{
+    float target_distance_cm = (segment != 0) ? segment->distance_cm : 0.0f;
+    float yaw_offset_deg = (segment != 0) ? segment->yaw_offset_deg : 0.0f;
+
     Encoder_ResetDistance();
 
     blind_distance_cm = 0.0f;
@@ -85,6 +107,11 @@ void AppBlind_Start(float target_distance_cm, float yaw_offset_deg)
     blind_left_cmd = 0;
     blind_right_cmd = 0;
     blind_last_heading_error = 0.0f;
+    blind_segment_base_speed = (segment != 0 && segment->base_speed > 0.0f) ?
+        (int16_t)segment->base_speed : BLIND_FAST_SPEED;
+    blind_timeout_ms = (segment != 0) ? segment->timeout_ms :
+        SEG_TIMEOUT_BLIND_MS;
+    blind_start_tick = app_millis();
     blind_task1_black_stop_enable = blind_next_task1_black_stop_enable;
     blind_next_task1_black_stop_enable = 0U;
     blind_done = 0U;
@@ -115,11 +142,27 @@ void AppBlind_Task(void)
     Encoder_Task();
     blind_distance_cm = Encoder_GetDistanceCm();
 
+    if (blind_timeout_ms > 0U &&
+        (uint32_t)(app_millis() - blind_start_tick) > blind_timeout_ms) {
+        Motor_Stop();
+        blind_left_cmd = 0;
+        blind_right_cmd = 0;
+        blind_turn_cmd = 0;
+        blind_done = 1U;
+        blind_active = 0U;
+        task1_finish_reason = 3U;
+        return;
+    }
+
+    if (imu_valid == 0U) {
+        blind_base_cmd = BLIND_SLOW_SPEED;
+    }
+
     if ((blind_target_distance_cm - blind_distance_cm) <=
         BLIND_SLOW_DOWN_DISTANCE_CM) {
         blind_base_cmd = BLIND_SLOW_SPEED;
     } else {
-        blind_base_cmd = BLIND_FAST_SPEED;
+        blind_base_cmd = blind_segment_base_speed;
     }
 
     if (blind_task1_black_stop_enable != 0U &&

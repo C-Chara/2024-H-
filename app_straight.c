@@ -12,7 +12,7 @@ void AppStraight_Init(void)
 void AppStraight_Start(const AppRouteSegment *segment)
 {
     if (segment != 0) {
-        AppBlind_Start(segment->target_distance_cm, segment->yaw_offset_deg);
+        AppBlind_StartSegment(segment);
     }
 }
 

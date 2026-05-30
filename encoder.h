@@ -13,6 +13,7 @@ extern volatile int32_t encoder_right_start;
 extern volatile int32_t encoder_left_delta;
 extern volatile int32_t encoder_right_delta;
 extern volatile float encoder_distance_cm;
+extern volatile uint8_t encoder_distance_source;
 extern volatile uint32_t encoder_left_irq_count;
 extern volatile uint32_t encoder_right_irq_count;
 extern volatile uint8_t encoder_valid;

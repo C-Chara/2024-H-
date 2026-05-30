@@ -51,7 +51,6 @@ int main(void)
         gray_poll();
         Encoder_Task();
         Sensor_Fusion_Task();
-        AppLine_Task();
         AppMode_Task();
         AppRunner_Task();
         Event_Task();

@@ -421,6 +421,10 @@ uint8_t atk_ms901m_init(uint32_t baudrate)
         gyro_roll = attitude.roll;
         gyro_pitch = attitude.pitch;
         gyro_yaw = attitude.yaw;
+        s_latest_attitude = attitude;
+        s_attitude_available = 1U;
+        gyro_latest_valid = 1U;
+        gyro_attitude_ok_count++;
         gyro_init_result = ATK_MS901M_EOK;
         gyro_ok = 1U;
         return ATK_MS901M_EOK;

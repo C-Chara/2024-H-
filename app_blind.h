@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "app_route.h"
+
 extern volatile float blind_distance_cm;
 extern volatile float blind_target_distance_cm;
 extern volatile float blind_target_yaw;
@@ -15,6 +17,7 @@ extern volatile int16_t blind_right_cmd;
 void AppBlind_Init(void);
 void AppBlind_EnableTask1BlackStop(uint8_t enable);
 void AppBlind_Start(float target_distance_cm, float yaw_offset_deg);
+void AppBlind_StartSegment(const AppRouteSegment *segment);
 void AppBlind_Task(void);
 uint8_t AppBlind_IsDone(void);
 void AppBlind_Stop(void);
