@@ -39,6 +39,7 @@ volatile int16_t route_max_heading_error = 0;
 volatile uint8_t route_last_node = NODE_NONE;
 volatile uint8_t runner_state_dbg = RUNNER_IDLE;
 volatile float route_start_yaw = 0.0f;
+volatile uint32_t runner_node_hint_count = 0U;
 
 volatile uint8_t t2_test_done = 0U;
 volatile uint8_t t2_finish_reason = 0U;
@@ -193,7 +194,7 @@ uint8_t AppRunner_Start(uint8_t task_id)
     runner_state = RUNNER_SEG_START;
     runner_state_dbg = (uint8_t)runner_state;
     runner_task_id = task_id;
-    route_start_yaw = gyro_yaw;
+    route_start_yaw = Sensor_GetStartYawSnapshot();
     runner_start_tick = app_millis();
     runner_segment_start_tick = runner_start_tick;
     runner_imu_invalid_start_tick = 0U;
@@ -247,6 +248,7 @@ void AppRunner_Task(void)
             runner_state_dbg = (uint8_t)runner_state;
         } else if (segment->type == SEG_NODE_EVENT) {
             runner_event_segment = segment;
+            runner_event_started = 0U;
             runner_state = RUNNER_SEG_EVENT;
             runner_state_dbg = (uint8_t)runner_state;
         } else if (segment->type == SEG_STOP) {
@@ -281,6 +283,7 @@ void AppRunner_Task(void)
                 Motor_Stop();
                 if (segment->node_hint_enable != 0U) {
                     runner_event_segment = segment;
+                    runner_event_started = 0U;
                     runner_state = RUNNER_SEG_EVENT;
                     runner_state_dbg = (uint8_t)runner_state;
                 } else {
@@ -299,6 +302,7 @@ void AppRunner_Task(void)
                 Motor_Stop();
                 if (segment->node_hint_enable != 0U) {
                     runner_event_segment = segment;
+                    runner_event_started = 0U;
                     runner_state = RUNNER_SEG_EVENT;
                     runner_state_dbg = (uint8_t)runner_state;
                 } else {
@@ -315,6 +319,7 @@ void AppRunner_Task(void)
         if (runner_event_started == 0U) {
             if (runner_event_segment != 0) {
                 route_last_node = (uint8_t)runner_event_segment->to_node;
+                runner_node_hint_count++;
                 AppEvent_NodeHint(route_last_node);
             }
             runner_event_started = 1U;

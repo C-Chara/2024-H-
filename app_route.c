@@ -28,12 +28,22 @@ static const AppRouteSegment route_task2[ROUTE_TASK2_COUNT] = {
     { SEG_BLIND, NODE_A, NODE_B, 9999.0f, 0.0f,
       BLIND_BASE_SPEED_T2, SEG_TIMEOUT_BLIND_MS, LINE_EXIT_BY_DISTANCE,
       0.0f, 1U, SEG_FLAG_BLIND_STOP_ON_BLACK | SEG_FLAG_ABS_ROUTE_YAW },
+    /*
+     * Task 2 arcs use the same exit rule:
+     * follow the black arc first, then leave the arc only after the strong
+     * black signal is lost for T2_LINE_EXIT_WHITE_MS. Do not use ordinary
+     * black_detected as an endpoint, because black is present along the arc.
+     */
     { SEG_LINE, NODE_B, NODE_C, 0.0f, 0.0f,
       LINE_BASE_SPEED, SEG_TIMEOUT_LINE_MS, LINE_EXIT_BY_TIMEOUT,
       0.0f, 1U, SEG_FLAG_LINE_END_ON_LOST },
     { SEG_BLIND, NODE_C, NODE_D, 9999.0f, 180.0f,
       BLIND_BASE_SPEED_T2, SEG_TIMEOUT_BLIND_MS, LINE_EXIT_BY_DISTANCE,
       0.0f, 1U, SEG_FLAG_BLIND_STOP_ON_BLACK | SEG_FLAG_ABS_ROUTE_YAW },
+    /*
+     * D->A deliberately mirrors B->C, so A point exit gets the same protection
+     * as C point exit and will not wait for an encoder distance endpoint.
+     */
     { SEG_LINE, NODE_D, NODE_A, 0.0f, 0.0f,
       LINE_BASE_SPEED, SEG_TIMEOUT_LINE_MS, LINE_EXIT_BY_TIMEOUT,
       0.0f, 1U, SEG_FLAG_LINE_END_ON_LOST },

@@ -4,6 +4,7 @@
 #include "alert.h"
 #include "app_event.h"
 #include "app_runner.h"
+#include "app_sensor.h"
 #include "key.h"
 
 volatile uint8_t selected_task = 1U;
@@ -59,6 +60,7 @@ void AppMode_Task(void)
         if (Key_GetStartLongPress() != 0U) {
             pending_task = selected_task;
             start_pending = 1U;
+            Sensor_StartYawCaptureReset();
             AppEvent_StartHint();
         }
 
@@ -101,6 +103,7 @@ void AppMode_Task(void)
         if (Key_GetStartLongPress() != 0U) {
             pending_task = selected_task;
             start_pending = 1U;
+            Sensor_StartYawCaptureReset();
             AppEvent_StartHint();
         }
 

@@ -26,8 +26,11 @@ extern volatile uint8_t line_ever_found;
 extern volatile uint32_t line_lost_start_tick;
 extern volatile uint8_t line_exit_by_white;
 extern volatile uint8_t line_end_on_lost_active;
+extern volatile uint8_t line_exit_distance_ok;
 extern volatile uint8_t line_ctrl_active;
 extern volatile uint8_t line_fail_reason;
+extern volatile uint8_t line_exit_forward_active;
+extern volatile uint32_t line_exit_forward_start_tick;
 
 void AppLine_Init(void);
 void AppLine_Task(void);

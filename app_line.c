@@ -27,8 +27,11 @@ volatile uint8_t line_ever_found = 0U;
 volatile uint32_t line_lost_start_tick = 0U;
 volatile uint8_t line_exit_by_white = 0U;
 volatile uint8_t line_end_on_lost_active = 0U;
+volatile uint8_t line_exit_distance_ok = 0U;
 volatile uint8_t line_ctrl_active = 0U;
 volatile uint8_t line_fail_reason = 0U;
+volatile uint8_t line_exit_forward_active = 0U;
+volatile uint32_t line_exit_forward_start_tick = 0U;
 
 static uint8_t line_segment_active = 0U;
 static uint8_t line_segment_done = 0U;
@@ -40,6 +43,7 @@ static uint32_t line_timeout_ms = SEG_TIMEOUT_LINE_MS;
 static uint32_t line_start_tick = 0U;
 static line_exit_mode_t line_exit_mode = LINE_EXIT_BY_DISTANCE_OR_NODE;
 static int16_t line_prev_control_error = 0;
+static route_node_t line_to_node = NODE_NONE;
 
 static const int16_t line_weights[8] = {
     -350, -250, -150, -50, 50, 150, 250, 350
@@ -81,9 +85,13 @@ void AppLine_Init(void)
     line_lost_start_tick = 0U;
     line_exit_by_white = 0U;
     line_end_on_lost_active = 0U;
+    line_exit_distance_ok = 0U;
     line_ctrl_active = 0U;
     line_fail_reason = 0U;
+    line_exit_forward_active = 0U;
+    line_exit_forward_start_tick = 0U;
     line_prev_control_error = 0;
+    line_to_node = NODE_NONE;
     line_segment_active = 0U;
     line_segment_done = 0U;
     line_segment_failed = 0U;
@@ -198,8 +206,11 @@ void AppLine_StartSegment(const AppRouteSegment *segment)
     line_ever_found = 0U;
     line_lost_start_tick = 0U;
     line_exit_by_white = 0U;
+    line_exit_distance_ok = 0U;
     line_ctrl_active = 0U;
     line_fail_reason = 0U;
+    line_exit_forward_active = 0U;
+    line_exit_forward_start_tick = 0U;
     black_confirm_count = 0U;
     white_confirm_count = 0U;
     black_detected = 0U;
@@ -212,6 +223,7 @@ void AppLine_StartSegment(const AppRouteSegment *segment)
         line_base_speed = segment->base_speed;
         line_timeout_ms = segment->timeout_ms;
         line_exit_mode = segment->line_exit_mode;
+        line_to_node = segment->to_node;
         line_end_on_lost_active =
             ((segment->flags & SEG_FLAG_LINE_END_ON_LOST) != 0U) ? 1U : 0U;
     } else {
@@ -220,6 +232,7 @@ void AppLine_StartSegment(const AppRouteSegment *segment)
         line_base_speed = LINE_BASE_SPEED;
         line_timeout_ms = SEG_TIMEOUT_LINE_MS;
         line_exit_mode = LINE_EXIT_BY_DISTANCE_OR_NODE;
+        line_to_node = NODE_NONE;
         line_end_on_lost_active = 0U;
     }
 
@@ -230,6 +243,7 @@ void AppLine_ControllerTask(void)
 {
     int16_t error_for_control;
     int16_t d_error;
+    int16_t current_base_speed;
     float turn_float;
     float distance = Encoder_GetDistanceCm();
     uint8_t distance_done = 0U;
@@ -242,6 +256,29 @@ void AppLine_ControllerTask(void)
     }
 
     line_ctrl_active = 1U;
+    current_base_speed = (distance >= T2_LINE_SLOW_AFTER_CM) ?
+        LINE_SLOW_SPEED : (int16_t)line_base_speed;
+
+    if (line_exit_forward_active != 0U) {
+        if ((uint32_t)(app_millis() - line_exit_forward_start_tick) >=
+            T2_LINE_EXIT_FORWARD_MS) {
+            line_exit_forward_active = 0U;
+            line_exit_by_white = 1U;
+            line_segment_done = 1U;
+            Motor_Stop();
+            line_left_cmd = 0;
+            line_right_cmd = 0;
+            line_turn_cmd = 0;
+            return;
+        }
+
+        line_turn_cmd = 0;
+        line_left_cmd = current_base_speed;
+        line_right_cmd = current_base_speed;
+        Motor_SetLeft(line_left_cmd);
+        Motor_SetRight(line_right_cmd);
+        return;
+    }
 
     if (line_timeout_ms > 0U &&
         (uint32_t)(app_millis() - line_start_tick) > line_timeout_ms) {
@@ -252,7 +289,17 @@ void AppLine_ControllerTask(void)
     }
 
     if (line_end_on_lost_active != 0U) {
-        if (line_found != 0U) {
+        line_exit_distance_ok =
+            (distance >= T2_LINE_EXIT_ENABLE_CM) ? 1U : 0U;
+
+        /*
+         * Task 2 exits an arc after it has really seen the black line, then
+         * loses the strong black signal for a short time. Do not require a
+         * perfectly white floor here; dust can keep line_dark_sum nonzero.
+         * Encoder arc distance is used as a guard: before the arc is long
+         * enough, temporary weak/dirty readings are not allowed to end it.
+         */
+        if (line_gray_trigger_hit != 0U) {
             line_ever_found = 1U;
             line_lost_start_tick = 0U;
             line_exit_by_white = 0U;
@@ -263,22 +310,40 @@ void AppLine_ControllerTask(void)
             Motor_SetLeft(line_left_cmd);
             Motor_SetRight(line_right_cmd);
             return;
+        } else if (line_exit_distance_ok == 0U) {
+            line_lost_start_tick = 0U;
         } else if (white_detected != 0U) {
             if (line_lost_start_tick == 0U) {
                 line_lost_start_tick = app_millis();
             }
             if ((uint32_t)(app_millis() - line_lost_start_tick) >=
                 T2_LINE_EXIT_WHITE_MS) {
-                line_exit_by_white = 1U;
-                line_segment_done = 1U;
-                Motor_Stop();
-                line_left_cmd = 0;
-                line_right_cmd = 0;
-                line_turn_cmd = 0;
+                if (line_to_node == NODE_C) {
+                    line_exit_forward_active = 1U;
+                    line_exit_forward_start_tick = app_millis();
+                    line_turn_cmd = 0;
+                    line_left_cmd = current_base_speed;
+                    line_right_cmd = current_base_speed;
+                    Motor_SetLeft(line_left_cmd);
+                    Motor_SetRight(line_right_cmd);
+                } else {
+                    line_exit_by_white = 1U;
+                    line_segment_done = 1U;
+                    Motor_Stop();
+                    line_left_cmd = 0;
+                    line_right_cmd = 0;
+                    line_turn_cmd = 0;
+                }
                 return;
             }
         } else {
             line_lost_start_tick = 0U;
+            line_turn_cmd = 0;
+            line_left_cmd = T2_LINE_LOST_SEARCH_SPEED;
+            line_right_cmd = T2_LINE_LOST_SEARCH_SPEED;
+            Motor_SetLeft(line_left_cmd);
+            Motor_SetRight(line_right_cmd);
+            return;
         }
     }
 
@@ -344,9 +409,9 @@ void AppLine_ControllerTask(void)
     line_prev_control_error = error_for_control;
     last_line_error = error_for_control;
 
-    line_left_cmd = AppLine_ClampForward((int32_t)line_base_speed +
+    line_left_cmd = AppLine_ClampForward((int32_t)current_base_speed +
         (int32_t)line_turn_cmd);
-    line_right_cmd = AppLine_ClampForward((int32_t)line_base_speed -
+    line_right_cmd = AppLine_ClampForward((int32_t)current_base_speed -
         (int32_t)line_turn_cmd);
     Motor_SetLeft(line_left_cmd);
     Motor_SetRight(line_right_cmd);
@@ -370,5 +435,8 @@ void AppLine_Stop(void)
     line_right_cmd = 0;
     line_turn_cmd = 0;
     line_ctrl_active = 0U;
+    line_exit_forward_active = 0U;
+    line_exit_forward_start_tick = 0U;
+    line_exit_distance_ok = 0U;
     Motor_Stop();
 }

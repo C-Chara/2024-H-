@@ -13,6 +13,7 @@ extern volatile float route_final_yaw;
 extern volatile int16_t route_max_heading_error;
 extern volatile uint8_t route_last_node;
 extern volatile uint8_t runner_state_dbg;
+extern volatile uint32_t runner_node_hint_count;
 
 extern volatile uint8_t t2_test_done;
 extern volatile uint8_t t2_finish_reason;

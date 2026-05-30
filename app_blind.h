@@ -25,6 +25,9 @@ extern volatile uint8_t blind_raw_black_count;
 extern volatile uint8_t blind_raw_black_hit;
 extern volatile uint8_t blind_abs_yaw_active;
 extern volatile uint8_t blind_aligning_dbg;
+extern volatile uint8_t blind_black_ignore_active;
+extern volatile uint8_t blind_cd_left_bias_active;
+extern volatile uint8_t blind_cd_left_bias_applied;
 
 void AppBlind_Init(void);
 void AppBlind_EnableTask1BlackStop(uint8_t enable);

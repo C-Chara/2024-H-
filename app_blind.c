@@ -30,6 +30,9 @@ volatile uint8_t blind_raw_black_count = 0U;
 volatile uint8_t blind_raw_black_hit = 0U;
 volatile uint8_t blind_abs_yaw_active = 0U;
 volatile uint8_t blind_aligning_dbg = 0U;
+volatile uint8_t blind_black_ignore_active = 0U;
+volatile uint8_t blind_cd_left_bias_active = 0U;
+volatile uint8_t blind_cd_left_bias_applied = 0U;
 
 static uint8_t blind_active = 0U;
 static uint8_t blind_done = 0U;
@@ -39,6 +42,8 @@ static float blind_last_heading_error = 0.0f;
 static int16_t blind_segment_base_speed = BLIND_FAST_SPEED;
 static uint32_t blind_timeout_ms = SEG_TIMEOUT_BLIND_MS;
 static uint32_t blind_start_tick = 0U;
+static route_node_t blind_from_node = NODE_NONE;
+static route_node_t blind_to_node = NODE_NONE;
 
 static float AppBlind_NormalizeAngle(float angle)
 {
@@ -135,10 +140,15 @@ void AppBlind_Init(void)
     blind_raw_black_hit = 0U;
     blind_abs_yaw_active = 0U;
     blind_aligning_dbg = 0U;
+    blind_black_ignore_active = 0U;
+    blind_cd_left_bias_active = 0U;
+    blind_cd_left_bias_applied = 0U;
     blind_last_heading_error = 0.0f;
     blind_segment_base_speed = BLIND_FAST_SPEED;
     blind_timeout_ms = SEG_TIMEOUT_BLIND_MS;
     blind_start_tick = 0U;
+    blind_from_node = NODE_NONE;
+    blind_to_node = NODE_NONE;
 }
 
 void AppBlind_EnableTask1BlackStop(uint8_t enable)
@@ -169,6 +179,11 @@ void AppBlind_StartSegment(const AppRouteSegment *segment)
     blind_target_distance_cm = target_distance_cm;
     blind_abs_yaw_active = (segment != 0 &&
         ((segment->flags & SEG_FLAG_ABS_ROUTE_YAW) != 0U)) ? 1U : 0U;
+    blind_from_node = (segment != 0) ? segment->from_node : NODE_NONE;
+    blind_to_node = (segment != 0) ? segment->to_node : NODE_NONE;
+    blind_cd_left_bias_active =
+        (blind_from_node == NODE_C && blind_to_node == NODE_D) ? 1U : 0U;
+    blind_cd_left_bias_applied = 0U;
     blind_target_yaw = (blind_abs_yaw_active != 0U) ?
         AppBlind_NormalizeAngle(route_start_yaw + yaw_offset_deg) :
         AppBlind_NormalizeAngle(gyro_yaw + yaw_offset_deg);
@@ -196,6 +211,7 @@ void AppBlind_StartSegment(const AppRouteSegment *segment)
     blind_black_confirm_count = 0U;
     blind_raw_black_count = 0U;
     blind_raw_black_hit = 0U;
+    blind_black_ignore_active = 0U;
     blind_aligning_dbg = blind_abs_yaw_active;
 
     if (blind_task1_black_stop_enable != 0U) {
@@ -235,6 +251,25 @@ void AppBlind_Task(void)
     blind_last_error_dbg = blind_last_heading_error;
 
     if (blind_stop_on_black_active != 0U) {
+        /*
+         * After leaving C, the C->D blind segment can still start on the arc
+         * edge. Ignore black briefly so the same C-point line is not counted
+         * again as the next node.
+         */
+        if (blind_distance_cm < T2_BLIND_BLACK_IGNORE_CM ||
+            (uint32_t)(app_millis() - blind_start_tick) <
+            T2_BLIND_BLACK_IGNORE_MS) {
+            blind_black_ignore_active = 1U;
+            blind_black_confirm_count = 0U;
+            blind_raw_black_count = 0U;
+            blind_raw_black_hit = 0U;
+        } else {
+            blind_black_ignore_active = 0U;
+        }
+    }
+
+    if (blind_stop_on_black_active != 0U &&
+        blind_black_ignore_active == 0U) {
         if (AppBlind_CheckRawBlack() != 0U) {
             if (blind_black_confirm_count < 255U) {
                 blind_black_confirm_count++;
@@ -283,13 +318,29 @@ void AppBlind_Task(void)
             blind_heading_error >= -BLIND_ALIGN_EXIT_DEG) {
             blind_aligning_dbg = 0U;
         } else {
+            int32_t align_turn_abs;
+
             turn_float = BLIND_ALIGN_TURN_GAIN * blind_heading_error;
             blind_turn_cmd = AppBlind_ClampTurn((int32_t)turn_float);
-            blind_base_cmd = BLIND_ALIGN_BASE_CMD;
-            blind_left_cmd = AppBlind_ClampForward(
-                (int32_t)blind_base_cmd - (int32_t)blind_turn_cmd);
-            blind_right_cmd = AppBlind_ClampForward(
-                (int32_t)blind_base_cmd + (int32_t)blind_turn_cmd);
+            align_turn_abs = (blind_turn_cmd >= 0) ?
+                (int32_t)blind_turn_cmd : (int32_t)(-blind_turn_cmd);
+            if (align_turn_abs < BLIND_ALIGN_MIN_TURN_CMD) {
+                align_turn_abs = BLIND_ALIGN_MIN_TURN_CMD;
+            }
+            if (align_turn_abs > BLIND_ALIGN_BASE_CMD) {
+                align_turn_abs = BLIND_ALIGN_BASE_CMD;
+            }
+
+            /* Absolute-yaw blind segments pivot in place before straight
+             * driving. This is only used for task route alignment. */
+            blind_base_cmd = 0;
+            if (blind_turn_cmd >= 0) {
+                blind_left_cmd = (int16_t)(-align_turn_abs);
+                blind_right_cmd = AppBlind_ClampForward(align_turn_abs);
+            } else {
+                blind_left_cmd = AppBlind_ClampForward(align_turn_abs);
+                blind_right_cmd = (int16_t)(-align_turn_abs);
+            }
             Motor_SetLeft(blind_left_cmd);
             Motor_SetRight(blind_right_cmd);
             return;

@@ -16,6 +16,9 @@ volatile uint32_t gyro_stale_count = 0U;
 volatile float gyro_yaw_fusion_dbg = 0.0f;
 volatile uint32_t gyro_fusion_update_count = 0U;
 volatile uint8_t imu_protection_enabled_dbg = 0U;
+volatile float start_yaw_snapshot = 0.0f;
+volatile uint32_t start_yaw_sample_count = 0U;
+volatile uint8_t start_yaw_ready = 0U;
 
 static uint8_t imu_was_valid = 0U;
 static uint8_t imu_stale_latched = 0U;
@@ -24,6 +27,45 @@ static uint32_t imu_health_last_poll_count = 0U;
 static uint32_t imu_health_last_rx_count = 0U;
 static uint32_t imu_health_last_upload_count = 0U;
 static uint32_t imu_health_last_attitude_count = 0U;
+static uint8_t start_yaw_capture_active = 0U;
+static float start_yaw_sum = 0.0f;
+static float start_yaw_last_raw = 0.0f;
+static float start_yaw_unwrapped = 0.0f;
+
+static float Sensor_NormalizeAngle(float angle)
+{
+    while (angle > 180.0f) {
+        angle -= 360.0f;
+    }
+    while (angle < -180.0f) {
+        angle += 360.0f;
+    }
+    return angle;
+}
+
+static void Sensor_CaptureStartYawSample(float yaw)
+{
+    float delta;
+
+    if (start_yaw_capture_active == 0U) {
+        return;
+    }
+
+    if (start_yaw_sample_count == 0U) {
+        start_yaw_unwrapped = yaw;
+        start_yaw_sum = yaw;
+    } else {
+        delta = Sensor_NormalizeAngle(yaw - start_yaw_last_raw);
+        start_yaw_unwrapped += delta;
+        start_yaw_sum += start_yaw_unwrapped;
+    }
+
+    start_yaw_last_raw = yaw;
+    start_yaw_sample_count++;
+    start_yaw_snapshot =
+        Sensor_NormalizeAngle(start_yaw_sum / (float)start_yaw_sample_count);
+    start_yaw_ready = (start_yaw_sample_count >= 5U) ? 1U : 0U;
+}
 
 void Sensor_Fusion_Init(void)
 {
@@ -43,6 +85,13 @@ void Sensor_Fusion_Init(void)
     imu_health_last_rx_count = 0U;
     imu_health_last_upload_count = 0U;
     imu_health_last_attitude_count = 0U;
+    start_yaw_snapshot = 0.0f;
+    start_yaw_sample_count = 0U;
+    start_yaw_ready = 0U;
+    start_yaw_capture_active = 0U;
+    start_yaw_sum = 0.0f;
+    start_yaw_last_raw = 0.0f;
+    start_yaw_unwrapped = 0.0f;
 }
 
 void Sensor_Fusion_Task(void)
@@ -58,6 +107,7 @@ void Sensor_Fusion_Task(void)
         gyro_yaw = att.yaw;
         gyro_yaw_fusion_dbg = gyro_yaw;
         gyro_fusion_update_count++;
+        Sensor_CaptureStartYawSample(gyro_yaw);
 
         if (last_tick != 0U) {
             imu_update_dt_ms = now - last_tick;
@@ -89,6 +139,26 @@ void Sensor_Fusion_Task(void)
             imu_stale_latched = 1U;
         }
     }
+}
+
+void Sensor_StartYawCaptureReset(void)
+{
+    start_yaw_snapshot = gyro_yaw;
+    start_yaw_sample_count = 0U;
+    start_yaw_ready = 0U;
+    start_yaw_capture_active = 1U;
+    start_yaw_sum = 0.0f;
+    start_yaw_last_raw = gyro_yaw;
+    start_yaw_unwrapped = gyro_yaw;
+}
+
+float Sensor_GetStartYawSnapshot(void)
+{
+    if (start_yaw_ready == 0U) {
+        return gyro_yaw;
+    }
+
+    return start_yaw_snapshot;
 }
 
 void Imu_Health_Task(void)
