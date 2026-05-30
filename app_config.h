@@ -5,10 +5,10 @@
 #define ENCODER_COUNTS_PER_REV          (780.0f)
 #define WHEEL_CIRCUMFERENCE_CM          (20.4f)
 
-#define FIELD_AB_CM                     (100.0f)
-#define FIELD_CD_CM                     (100.0f)
-#define FIELD_AC_CM                     (141.4f)
-#define FIELD_BD_CM                     (141.4f)
+#define FIELD_AB_CM                     (50.0f)
+#define FIELD_CD_CM                     (50.0f)
+#define FIELD_AC_CM                     (70.7f)
+#define FIELD_BD_CM                     (70.7f)
 
 #define DIST_AB_CM                      (FIELD_AB_CM)
 #define DIST_CD_CM                      (FIELD_CD_CM)
@@ -35,8 +35,8 @@
 #define LINE_D_TO_A_CM                  (100.0f)
 
 /* Speed limits. Motor_SetLeft/Right keep their existing project interface. */
-#define BLIND_FAST_SPEED                (260)
-#define BLIND_SLOW_SPEED                (170)
+#define BLIND_FAST_SPEED                (300)
+#define BLIND_SLOW_SPEED                (200)
 #define BLIND_MAX_SPEED                 (500)
 #define BLIND_SLOW_DOWN_DISTANCE_CM     (25.0f)
 
@@ -44,9 +44,23 @@
 #define BLIND_BASE_SPEED_T3             (200)
 #define BLIND_BASE_SPEED_T4             (190)
 
-#define LINE_BASE_SPEED                 (160)
-#define LINE_SLOW_SPEED                 (130)
-#define LINE_MAX_SPEED                  (300)
+#define T2_BLACK_SENSOR_DARK_TH         (30U)
+#define T2_BLACK_SENSOR_NEED            (1U)
+#define T2_BLIND_BLACK_CONFIRM_NEED     (1U)
+
+#define T2_LINE_EXIT_WHITE_MS           (800U)
+#define T2_LINE_LOST_SEARCH_SPEED       (220)
+#define T2_LINE_SEARCH_TURN_CMD         (45)
+
+#define LINE_BASE_SPEED                 (250)
+#define LINE_SLOW_SPEED                 (220)
+#define LINE_MAX_SPEED                  (500)
+#define LINE_TURN_SIGN                  (1)
+
+#define BLIND_ALIGN_ENTER_DEG           (8.0f)
+#define BLIND_ALIGN_EXIT_DEG            (4.0f)
+#define BLIND_ALIGN_BASE_CMD            (180)
+#define BLIND_ALIGN_TURN_GAIN           (5.0f)
 #define ARC_BASE_SPEED                  (LINE_BASE_SPEED)
 #define ARC_MAX_SPEED                   (LINE_MAX_SPEED)
 

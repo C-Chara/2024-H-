@@ -18,6 +18,13 @@ extern volatile float blind_last_error_dbg;
 extern volatile uint8_t blind_ctrl_active;
 extern volatile float blind_yaw_now_dbg;
 extern volatile uint8_t blind_finish_enabled_dbg;
+extern volatile uint8_t blind_stop_on_black_active;
+extern volatile uint8_t blind_finish_by_gray;
+extern volatile uint8_t blind_black_confirm_count;
+extern volatile uint8_t blind_raw_black_count;
+extern volatile uint8_t blind_raw_black_hit;
+extern volatile uint8_t blind_abs_yaw_active;
+extern volatile uint8_t blind_aligning_dbg;
 
 void AppBlind_Init(void);
 void AppBlind_EnableTask1BlackStop(uint8_t enable);

@@ -70,6 +70,8 @@ int main(void)
         gray_poll_enter_count++;
         gray_poll();
 
+        AppLine_Task();
+
         Encoder_Task();
 
         runtime_block_source_dbg = 4U;

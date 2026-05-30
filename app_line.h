@@ -20,6 +20,14 @@ extern volatile int16_t last_line_error;
 extern volatile int16_t line_turn_cmd;
 extern volatile int16_t line_left_cmd;
 extern volatile int16_t line_right_cmd;
+extern volatile uint8_t line_black_sensor_count;
+extern volatile uint8_t line_gray_trigger_hit;
+extern volatile uint8_t line_ever_found;
+extern volatile uint32_t line_lost_start_tick;
+extern volatile uint8_t line_exit_by_white;
+extern volatile uint8_t line_end_on_lost_active;
+extern volatile uint8_t line_ctrl_active;
+extern volatile uint8_t line_fail_reason;
 
 void AppLine_Init(void);
 void AppLine_Task(void);

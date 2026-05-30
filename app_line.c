@@ -21,6 +21,14 @@ volatile int16_t last_line_error = 0;
 volatile int16_t line_turn_cmd = 0;
 volatile int16_t line_left_cmd = 0;
 volatile int16_t line_right_cmd = 0;
+volatile uint8_t line_black_sensor_count = 0U;
+volatile uint8_t line_gray_trigger_hit = 0U;
+volatile uint8_t line_ever_found = 0U;
+volatile uint32_t line_lost_start_tick = 0U;
+volatile uint8_t line_exit_by_white = 0U;
+volatile uint8_t line_end_on_lost_active = 0U;
+volatile uint8_t line_ctrl_active = 0U;
+volatile uint8_t line_fail_reason = 0U;
 
 static uint8_t line_segment_active = 0U;
 static uint8_t line_segment_done = 0U;
@@ -67,6 +75,14 @@ void AppLine_Init(void)
     line_turn_cmd = 0;
     line_left_cmd = 0;
     line_right_cmd = 0;
+    line_black_sensor_count = 0U;
+    line_gray_trigger_hit = 0U;
+    line_ever_found = 0U;
+    line_lost_start_tick = 0U;
+    line_exit_by_white = 0U;
+    line_end_on_lost_active = 0U;
+    line_ctrl_active = 0U;
+    line_fail_reason = 0U;
     line_prev_control_error = 0;
     line_segment_active = 0U;
     line_segment_done = 0U;
@@ -83,6 +99,7 @@ void AppLine_Task(void)
     uint16_t sum = 0U;
     uint16_t max_dark = 0U;
     uint8_t active_count = 0U;
+    uint8_t black_sensor_count = 0U;
 
     if (gray_valid == 0U) {
         line_found = 0U;
@@ -91,6 +108,8 @@ void AppLine_Task(void)
         line_dark_sum = 0U;
         line_max_dark = 0U;
         line_active_sensor_count = 0U;
+        line_black_sensor_count = 0U;
+        line_gray_trigger_hit = 0U;
         black_detected = 0U;
         white_detected = 0U;
         black_confirm_count = 0U;
@@ -116,6 +135,9 @@ void AppLine_Task(void)
         if (dark > max_dark) {
             max_dark = dark;
         }
+        if (dark >= T2_BLACK_SENSOR_DARK_TH) {
+            black_sensor_count++;
+        }
         if (dark > SINGLE_SENSOR_BLACK_TH) {
             active_count++;
         }
@@ -125,17 +147,21 @@ void AppLine_Task(void)
     line_confidence = sum;
     line_max_dark = max_dark;
     line_active_sensor_count = active_count;
+    line_black_sensor_count = black_sensor_count;
+    line_gray_trigger_hit =
+        (line_black_sensor_count >= T2_BLACK_SENSOR_NEED) ? 1U : 0U;
 
-    if (sum >= LINE_DARK_SUM_MIN) {
+    if (line_gray_trigger_hit != 0U || sum >= LINE_DARK_SUM_MIN) {
         line_found = 1U;
-        line_error = (int16_t)(weighted_sum / (int32_t)sum);
+        line_error = (sum != 0U) ?
+            (int16_t)(weighted_sum / (int32_t)sum) : 0;
         last_line_error = line_error;
     } else {
         line_found = 0U;
         line_error = 0;
     }
 
-    if (sum >= BLACK_DARK_SUM_TH && max_dark >= SINGLE_SENSOR_BLACK_TH) {
+    if (line_gray_trigger_hit != 0U) {
         if (black_confirm_count < 255U) {
             black_confirm_count++;
         }
@@ -143,9 +169,9 @@ void AppLine_Task(void)
         black_confirm_count = 0U;
     }
     black_detected =
-        (black_confirm_count >= BLACK_STOP_CONFIRM_COUNT) ? 1U : 0U;
+        (black_confirm_count >= T2_BLACK_SENSOR_NEED) ? 1U : 0U;
 
-    if (sum <= WHITE_DARK_SUM_TH) {
+    if (line_black_sensor_count == 0U) {
         if (white_confirm_count < 255U) {
             white_confirm_count++;
         }
@@ -167,6 +193,13 @@ void AppLine_StartSegment(const AppRouteSegment *segment)
     line_turn_cmd = 0;
     line_left_cmd = 0;
     line_right_cmd = 0;
+    line_black_sensor_count = 0U;
+    line_gray_trigger_hit = 0U;
+    line_ever_found = 0U;
+    line_lost_start_tick = 0U;
+    line_exit_by_white = 0U;
+    line_ctrl_active = 0U;
+    line_fail_reason = 0U;
     black_confirm_count = 0U;
     white_confirm_count = 0U;
     black_detected = 0U;
@@ -179,12 +212,15 @@ void AppLine_StartSegment(const AppRouteSegment *segment)
         line_base_speed = segment->base_speed;
         line_timeout_ms = segment->timeout_ms;
         line_exit_mode = segment->line_exit_mode;
+        line_end_on_lost_active =
+            ((segment->flags & SEG_FLAG_LINE_END_ON_LOST) != 0U) ? 1U : 0U;
     } else {
         line_target_distance_cm = LINE_B_TO_C_CM;
         line_min_black_detect_cm = 30.0f;
         line_base_speed = LINE_BASE_SPEED;
         line_timeout_ms = SEG_TIMEOUT_LINE_MS;
         line_exit_mode = LINE_EXIT_BY_DISTANCE_OR_NODE;
+        line_end_on_lost_active = 0U;
     }
 
     Encoder_ResetDistance();
@@ -201,16 +237,49 @@ void AppLine_ControllerTask(void)
 
     if (line_segment_active == 0U || line_segment_done != 0U ||
         line_segment_failed != 0U) {
+        line_ctrl_active = 0U;
         return;
     }
 
-    AppLine_Task();
+    line_ctrl_active = 1U;
 
     if (line_timeout_ms > 0U &&
         (uint32_t)(app_millis() - line_start_tick) > line_timeout_ms) {
-        line_segment_done = 1U;
+        line_segment_failed = 1U;
+        line_fail_reason = 2U;
         Motor_Stop();
         return;
+    }
+
+    if (line_end_on_lost_active != 0U) {
+        if (line_found != 0U) {
+            line_ever_found = 1U;
+            line_lost_start_tick = 0U;
+            line_exit_by_white = 0U;
+        } else if (line_ever_found == 0U) {
+            line_turn_cmd = 0;
+            line_left_cmd = T2_LINE_LOST_SEARCH_SPEED;
+            line_right_cmd = T2_LINE_LOST_SEARCH_SPEED;
+            Motor_SetLeft(line_left_cmd);
+            Motor_SetRight(line_right_cmd);
+            return;
+        } else if (white_detected != 0U) {
+            if (line_lost_start_tick == 0U) {
+                line_lost_start_tick = app_millis();
+            }
+            if ((uint32_t)(app_millis() - line_lost_start_tick) >=
+                T2_LINE_EXIT_WHITE_MS) {
+                line_exit_by_white = 1U;
+                line_segment_done = 1U;
+                Motor_Stop();
+                line_left_cmd = 0;
+                line_right_cmd = 0;
+                line_turn_cmd = 0;
+                return;
+            }
+        } else {
+            line_lost_start_tick = 0U;
+        }
     }
 
     if (line_target_distance_cm > 0.0f && distance >= line_target_distance_cm) {
@@ -243,10 +312,25 @@ void AppLine_ControllerTask(void)
         }
 
         if (line_lost_count >= LINE_LOST_STOP_COUNT) {
+            if (line_end_on_lost_active != 0U) {
+                error_for_control = last_line_error;
+            } else {
             line_segment_failed = 1U;
+            line_fail_reason = 1U;
             Motor_Stop();
             line_left_cmd = 0;
             line_right_cmd = 0;
+            return;
+            }
+        } else {
+            line_turn_cmd = (last_line_error >= 0) ?
+                T2_LINE_SEARCH_TURN_CMD : (int16_t)(-T2_LINE_SEARCH_TURN_CMD);
+            line_left_cmd = AppLine_ClampForward(
+                T2_LINE_LOST_SEARCH_SPEED + (int32_t)line_turn_cmd);
+            line_right_cmd = AppLine_ClampForward(
+                T2_LINE_LOST_SEARCH_SPEED - (int32_t)line_turn_cmd);
+            Motor_SetLeft(line_left_cmd);
+            Motor_SetRight(line_right_cmd);
             return;
         }
 
@@ -254,15 +338,15 @@ void AppLine_ControllerTask(void)
     }
 
     d_error = (int16_t)(error_for_control - line_prev_control_error);
-    turn_float = LINE_KP * (float)error_for_control +
-        LINE_KD * (float)d_error;
+    turn_float = (float)LINE_TURN_SIGN *
+        (LINE_KP * (float)error_for_control + LINE_KD * (float)d_error);
     line_turn_cmd = (int16_t)turn_float;
     line_prev_control_error = error_for_control;
     last_line_error = error_for_control;
 
-    line_left_cmd = AppLine_ClampForward((int32_t)line_base_speed -
+    line_left_cmd = AppLine_ClampForward((int32_t)line_base_speed +
         (int32_t)line_turn_cmd);
-    line_right_cmd = AppLine_ClampForward((int32_t)line_base_speed +
+    line_right_cmd = AppLine_ClampForward((int32_t)line_base_speed -
         (int32_t)line_turn_cmd);
     Motor_SetLeft(line_left_cmd);
     Motor_SetRight(line_right_cmd);
@@ -285,5 +369,6 @@ void AppLine_Stop(void)
     line_left_cmd = 0;
     line_right_cmd = 0;
     line_turn_cmd = 0;
+    line_ctrl_active = 0U;
     Motor_Stop();
 }

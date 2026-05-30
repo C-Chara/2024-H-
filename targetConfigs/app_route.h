@@ -32,10 +32,7 @@ typedef enum {
 #define SEG_ARC_LINE            SEG_LINE
 #define SEG_STOP_HINT           SEG_STOP
 
-#define SEG_FLAG_TASK1_BLACK_STOP       (0x01U)
-#define SEG_FLAG_BLIND_STOP_ON_BLACK    (0x02U)
-#define SEG_FLAG_LINE_END_ON_LOST       (0x04U)
-#define SEG_FLAG_ABS_ROUTE_YAW          (0x08U)
+#define SEG_FLAG_TASK1_BLACK_STOP   (0x01U)
 
 typedef struct {
     route_segment_type_t type;
@@ -57,7 +54,6 @@ extern volatile uint8_t route_loaded;
 extern volatile uint8_t current_segment_index;
 extern volatile uint8_t current_lap;
 extern volatile uint8_t route_finished;
-extern volatile float route_start_yaw;
 
 void AppRoute_Init(void);
 uint8_t AppRoute_LoadTask(uint8_t task_id);

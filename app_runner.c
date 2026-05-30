@@ -10,6 +10,7 @@
 #include "app_task.h"
 #include "app_time.h"
 #include "encoder.h"
+#include "gyro.h"
 
 typedef enum {
     RUNNER_IDLE = 0,
@@ -36,6 +37,8 @@ volatile float route_final_distance_cm = 0.0f;
 volatile float route_final_yaw = 0.0f;
 volatile int16_t route_max_heading_error = 0;
 volatile uint8_t route_last_node = NODE_NONE;
+volatile uint8_t runner_state_dbg = RUNNER_IDLE;
+volatile float route_start_yaw = 0.0f;
 
 volatile uint8_t t2_test_done = 0U;
 volatile uint8_t t2_finish_reason = 0U;
@@ -140,6 +143,7 @@ static void Runner_FinishRoute(uint8_t finish_reason, uint8_t error_code)
     run_finished = 1U;
     run_active = 0U;
     runner_state = RUNNER_FINISHED;
+    runner_state_dbg = (uint8_t)runner_state;
     AppEvent_FinishHint();
 
     if (runner_task_id == 1U) {
@@ -156,6 +160,7 @@ static void Runner_AdvanceAfterSegment(void)
     AppRoute_AdvanceSegment();
     runner_state = (route_finished != 0U) ? RUNNER_FINISHED :
         RUNNER_SEG_START;
+    runner_state_dbg = (uint8_t)runner_state;
 }
 
 void AppRunner_Init(void)
@@ -163,6 +168,7 @@ void AppRunner_Init(void)
     run_active = 0U;
     run_finished = 0U;
     runner_state = RUNNER_IDLE;
+    runner_state_dbg = (uint8_t)runner_state;
     runner_task_id = 1U;
     runner_start_tick = 0U;
     runner_segment_start_tick = 0U;
@@ -185,7 +191,9 @@ uint8_t AppRunner_Start(uint8_t task_id)
     run_active = 1U;
     run_finished = 0U;
     runner_state = RUNNER_SEG_START;
+    runner_state_dbg = (uint8_t)runner_state;
     runner_task_id = task_id;
+    route_start_yaw = gyro_yaw;
     runner_start_tick = app_millis();
     runner_segment_start_tick = runner_start_tick;
     runner_imu_invalid_start_tick = 0U;
@@ -201,6 +209,7 @@ void AppRunner_Stop(void)
     AppLine_Stop();
     run_active = 0U;
     runner_state = RUNNER_IDLE;
+    runner_state_dbg = (uint8_t)runner_state;
     runner_segment_start_tick = 0U;
     runner_imu_invalid_start_tick = 0U;
     runner_event_started = 0U;
@@ -231,12 +240,15 @@ void AppRunner_Task(void)
                 (segment->flags & SEG_FLAG_TASK1_BLACK_STOP) != 0U);
             AppBlind_StartSegment(segment);
             runner_state = RUNNER_SEG_RUNNING;
+            runner_state_dbg = (uint8_t)runner_state;
         } else if (segment->type == SEG_LINE) {
             AppLine_StartSegment(segment);
             runner_state = RUNNER_SEG_RUNNING;
+            runner_state_dbg = (uint8_t)runner_state;
         } else if (segment->type == SEG_NODE_EVENT) {
             runner_event_segment = segment;
             runner_state = RUNNER_SEG_EVENT;
+            runner_state_dbg = (uint8_t)runner_state;
         } else if (segment->type == SEG_STOP) {
             Runner_FinishRoute(ROUTE_FINISH_DONE, 0U);
         } else {
@@ -270,12 +282,12 @@ void AppRunner_Task(void)
                 if (segment->node_hint_enable != 0U) {
                     runner_event_segment = segment;
                     runner_state = RUNNER_SEG_EVENT;
+                    runner_state_dbg = (uint8_t)runner_state;
                 } else {
                     Runner_AdvanceAfterSegment();
                 }
             }
         } else if (segment->type == SEG_LINE) {
-            AppLine_Task();
             AppLine_ControllerTask();
             if (AppLine_IsFailed() != 0U) {
                 Runner_FinishRoute(ROUTE_FINISH_LINE_LOST,
@@ -288,6 +300,7 @@ void AppRunner_Task(void)
                 if (segment->node_hint_enable != 0U) {
                     runner_event_segment = segment;
                     runner_state = RUNNER_SEG_EVENT;
+                    runner_state_dbg = (uint8_t)runner_state;
                 } else {
                     Runner_AdvanceAfterSegment();
                 }
