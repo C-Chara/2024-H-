@@ -17,6 +17,11 @@ volatile int16_t blind_base_cmd = 0;
 volatile int16_t blind_turn_cmd = 0;
 volatile int16_t blind_left_cmd = 0;
 volatile int16_t blind_right_cmd = 0;
+volatile uint8_t blind_segment_started = 0U;
+volatile float blind_last_error_dbg = 0.0f;
+volatile uint8_t blind_ctrl_active = 0U;
+volatile float blind_yaw_now_dbg = 0.0f;
+volatile uint8_t blind_finish_enabled_dbg = 1U;
 
 static uint8_t blind_active = 0U;
 static uint8_t blind_done = 0U;
@@ -53,6 +58,19 @@ static int16_t AppBlind_ClampForward(int32_t value)
     return (int16_t)value;
 }
 
+static int16_t AppBlind_ClampTurn(int32_t value)
+{
+    if (value > BLIND_MAX_SPEED) {
+        return BLIND_MAX_SPEED;
+    }
+
+    if (value < -BLIND_MAX_SPEED) {
+        return (int16_t)(-BLIND_MAX_SPEED);
+    }
+
+    return (int16_t)value;
+}
+
 void AppBlind_Init(void)
 {
     blind_active = 0U;
@@ -67,6 +85,11 @@ void AppBlind_Init(void)
     blind_turn_cmd = 0;
     blind_left_cmd = 0;
     blind_right_cmd = 0;
+    blind_segment_started = 0U;
+    blind_last_error_dbg = 0.0f;
+    blind_ctrl_active = 0U;
+    blind_yaw_now_dbg = 0.0f;
+    blind_finish_enabled_dbg = 1U;
     blind_last_heading_error = 0.0f;
     blind_segment_base_speed = BLIND_FAST_SPEED;
     blind_timeout_ms = SEG_TIMEOUT_BLIND_MS;
@@ -99,8 +122,7 @@ void AppBlind_StartSegment(const AppRouteSegment *segment)
 
     blind_distance_cm = 0.0f;
     blind_target_distance_cm = target_distance_cm;
-    blind_target_yaw = AppBlind_NormalizeAngle(gyro_yaw_filtered +
-        yaw_offset_deg);
+    blind_target_yaw = AppBlind_NormalizeAngle(gyro_yaw + yaw_offset_deg);
     blind_heading_error = 0.0f;
     blind_base_cmd = BLIND_FAST_SPEED;
     blind_turn_cmd = 0;
@@ -116,6 +138,9 @@ void AppBlind_StartSegment(const AppRouteSegment *segment)
     blind_next_task1_black_stop_enable = 0U;
     blind_done = 0U;
     blind_active = 1U;
+    blind_segment_started = 1U;
+    blind_ctrl_active = 0U;
+    blind_last_error_dbg = blind_last_heading_error;
 
     if (blind_task1_black_stop_enable != 0U) {
         AppTask_MarkTask1Run();
@@ -134,15 +159,26 @@ void AppBlind_Task(void)
 {
     float d_error;
     float turn_float;
+    int32_t turn_i32;
+    int32_t left_i32;
+    int32_t right_i32;
 
     if (blind_active == 0U || blind_done != 0U) {
+        blind_ctrl_active = 0U;
         return;
     }
 
+    blind_ctrl_active = 1U;
     Encoder_Task();
     blind_distance_cm = Encoder_GetDistanceCm();
 
-    if (blind_timeout_ms > 0U &&
+    blind_yaw_now_dbg = gyro_yaw;
+    blind_heading_error = AppBlind_NormalizeAngle(blind_target_yaw - gyro_yaw);
+    d_error = blind_heading_error - blind_last_heading_error;
+    blind_last_heading_error = blind_heading_error;
+    blind_last_error_dbg = blind_last_heading_error;
+
+    if (blind_finish_enabled_dbg != 0U && blind_timeout_ms > 0U &&
         (uint32_t)(app_millis() - blind_start_tick) > blind_timeout_ms) {
         Motor_Stop();
         blind_left_cmd = 0;
@@ -150,6 +186,8 @@ void AppBlind_Task(void)
         blind_turn_cmd = 0;
         blind_done = 1U;
         blind_active = 0U;
+        blind_segment_started = 0U;
+        blind_ctrl_active = 0U;
         task1_finish_reason = 3U;
         return;
     }
@@ -177,15 +215,18 @@ void AppBlind_Task(void)
         task1_black_detected = 0U;
     }
 
-    if (blind_distance_cm >= blind_target_distance_cm ||
-        (blind_task1_black_stop_enable != 0U &&
-         task1_black_confirm_count >= BLACK_STOP_CONFIRM_COUNT)) {
+    if (blind_finish_enabled_dbg != 0U &&
+        (blind_distance_cm >= blind_target_distance_cm ||
+         (blind_task1_black_stop_enable != 0U &&
+          task1_black_confirm_count >= BLACK_STOP_CONFIRM_COUNT))) {
         Motor_Stop();
         blind_left_cmd = 0;
         blind_right_cmd = 0;
         blind_turn_cmd = 0;
         blind_done = 1U;
         blind_active = 0U;
+        blind_segment_started = 0U;
+        blind_ctrl_active = 0U;
 
         if (blind_task1_black_stop_enable != 0U) {
             task1_state = TASK1_STOP;
@@ -202,18 +243,15 @@ void AppBlind_Task(void)
         return;
     }
 
-    blind_heading_error = AppBlind_NormalizeAngle(blind_target_yaw -
-        gyro_yaw_filtered);
-    d_error = blind_heading_error - blind_last_heading_error;
-    blind_last_heading_error = blind_heading_error;
     turn_float = BLIND_KP_YAW * blind_heading_error +
         BLIND_KD_YAW * d_error;
-    blind_turn_cmd = (int16_t)turn_float;
+    turn_i32 = (int32_t)turn_float;
+    blind_turn_cmd = AppBlind_ClampTurn(turn_i32);
 
-    blind_left_cmd = AppBlind_ClampForward((int32_t)blind_base_cmd -
-        (int32_t)blind_turn_cmd);
-    blind_right_cmd = AppBlind_ClampForward((int32_t)blind_base_cmd +
-        (int32_t)blind_turn_cmd);
+    left_i32 = (int32_t)blind_base_cmd - (int32_t)blind_turn_cmd;
+    right_i32 = (int32_t)blind_base_cmd + (int32_t)blind_turn_cmd;
+    blind_left_cmd = AppBlind_ClampForward(left_i32);
+    blind_right_cmd = AppBlind_ClampForward(right_i32);
 
     Motor_SetLeft(blind_left_cmd);
     Motor_SetRight(blind_right_cmd);
@@ -239,6 +277,8 @@ void AppBlind_Stop(void)
     Motor_Stop();
     blind_active = 0U;
     blind_done = 1U;
+    blind_segment_started = 0U;
+    blind_ctrl_active = 0U;
     blind_left_cmd = 0;
     blind_right_cmd = 0;
     blind_turn_cmd = 0;

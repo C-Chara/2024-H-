@@ -1,5 +1,7 @@
 #include "ti_msp_dl_config.h"
 
+#include <stdint.h>
+
 #include "Algorithm/gray.h"
 #include "Algorithm/motor.h"
 #include "atk_ms901m.h"
@@ -17,6 +19,14 @@
 #include "encoder.h"
 #include "gyro.h"
 #include "key.h"
+
+volatile uint32_t app_main_loop_count = 0U;
+volatile uint32_t key_task_count = 0U;
+volatile uint32_t imu_poll_enter_count = 0U;
+volatile uint32_t gray_poll_enter_count = 0U;
+volatile uint32_t runner_task_count = 0U;
+volatile uint32_t event_task_count = 0U;
+volatile uint8_t runtime_block_source_dbg = 0U;
 
 int main(void)
 {
@@ -46,13 +56,37 @@ int main(void)
     }
 
     while (1) {
+        app_main_loop_count++;
+
+        runtime_block_source_dbg = 1U;
+        key_task_count++;
         Key_Task();
+
+        runtime_block_source_dbg = 2U;
+        imu_poll_enter_count++;
         atk_ms901m_poll();
+
+        runtime_block_source_dbg = 3U;
+        gray_poll_enter_count++;
         gray_poll();
+
         Encoder_Task();
+
+        runtime_block_source_dbg = 4U;
         Sensor_Fusion_Task();
+        Imu_Health_Task();
+
+        runtime_block_source_dbg = 5U;
         AppMode_Task();
+
+        runtime_block_source_dbg = 6U;
+        runner_task_count++;
         AppRunner_Task();
+
+        runtime_block_source_dbg = 7U;
+        event_task_count++;
         Event_Task();
+
+        runtime_block_source_dbg = 0U;
     }
 }

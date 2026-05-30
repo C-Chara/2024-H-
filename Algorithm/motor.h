@@ -9,6 +9,7 @@ extern volatile uint16_t motor_left_compare;
 extern volatile uint16_t motor_right_compare;
 extern volatile uint8_t motor_left_dir;
 extern volatile uint8_t motor_right_dir;
+extern volatile uint8_t motor_output_enabled_dbg;
 
 void Motor_Init(void);
 

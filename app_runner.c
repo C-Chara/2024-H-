@@ -25,6 +25,7 @@ typedef enum {
 #define ROUTE_FINISH_TIMEOUT    (2U)
 #define ROUTE_FINISH_LINE_LOST  (3U)
 #define ROUTE_FINISH_IMU_LOST   (4U)
+#define ROUTE_FAIL_IMU          (ROUTE_FINISH_IMU_LOST)
 
 volatile uint8_t run_active = 0U;
 volatile uint8_t run_finished = 0U;
@@ -55,6 +56,8 @@ volatile int16_t t4_max_heading_error = 0;
 static runner_state_t runner_state = RUNNER_IDLE;
 static uint8_t runner_task_id = 1U;
 static uint32_t runner_start_tick = 0U;
+static uint32_t runner_segment_start_tick = 0U;
+static uint32_t runner_imu_invalid_start_tick = 0U;
 static const AppRouteSegment *runner_event_segment = 0;
 static uint8_t runner_event_started = 0U;
 
@@ -162,6 +165,8 @@ void AppRunner_Init(void)
     runner_state = RUNNER_IDLE;
     runner_task_id = 1U;
     runner_start_tick = 0U;
+    runner_segment_start_tick = 0U;
+    runner_imu_invalid_start_tick = 0U;
     runner_event_segment = 0;
     runner_event_started = 0U;
     Runner_ResetResults();
@@ -182,6 +187,8 @@ uint8_t AppRunner_Start(uint8_t task_id)
     runner_state = RUNNER_SEG_START;
     runner_task_id = task_id;
     runner_start_tick = app_millis();
+    runner_segment_start_tick = runner_start_tick;
+    runner_imu_invalid_start_tick = 0U;
     runner_event_segment = 0;
     runner_event_started = 0U;
     return 1U;
@@ -194,6 +201,8 @@ void AppRunner_Stop(void)
     AppLine_Stop();
     run_active = 0U;
     runner_state = RUNNER_IDLE;
+    runner_segment_start_tick = 0U;
+    runner_imu_invalid_start_tick = 0U;
     runner_event_started = 0U;
 }
 
@@ -214,6 +223,8 @@ void AppRunner_Task(void)
 
     if (runner_state == RUNNER_SEG_START) {
         runner_event_started = 0U;
+        runner_segment_start_tick = app_millis();
+        runner_imu_invalid_start_tick = 0U;
 
         if (segment->type == SEG_BLIND) {
             AppBlind_EnableTask1BlackStop(
@@ -235,12 +246,23 @@ void AppRunner_Task(void)
     }
 
     if (runner_state == RUNNER_SEG_RUNNING) {
-        AppLine_Task();
-
         if (segment->type == SEG_BLIND) {
             AppBlind_Task();
             if (imu_valid == 0U) {
                 route_error_code = ROUTE_FINISH_IMU_LOST;
+                if (runner_imu_invalid_start_tick == 0U) {
+                    runner_imu_invalid_start_tick = app_millis();
+                }
+
+                if (imu_protection_enabled_dbg != 0U &&
+                    (uint32_t)(app_millis() -
+                    runner_imu_invalid_start_tick) > 150U) {
+                    Runner_FinishRoute(ROUTE_FAIL_IMU,
+                        ROUTE_FINISH_IMU_LOST);
+                    return;
+                }
+            } else {
+                runner_imu_invalid_start_tick = 0U;
             }
 
             if (AppBlind_IsDone() != 0U) {
@@ -253,6 +275,7 @@ void AppRunner_Task(void)
                 }
             }
         } else if (segment->type == SEG_LINE) {
+            AppLine_Task();
             AppLine_ControllerTask();
             if (AppLine_IsFailed() != 0U) {
                 Runner_FinishRoute(ROUTE_FINISH_LINE_LOST,

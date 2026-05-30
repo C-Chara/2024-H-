@@ -18,6 +18,15 @@ volatile uint8_t gyro_last_frame_type = 0U;
 volatile uint8_t gyro_last_frame_len = 0U;
 volatile uint32_t gyro_poll_count = 0U;
 volatile uint8_t gyro_latest_valid = 0U;
+volatile float gyro_yaw_parser_dbg = 0.0f;
+volatile uint32_t imu_valid_upload_frame_count = 0U;
+volatile uint32_t imu_valid_attitude_frame_count = 0U;
+volatile uint32_t imu_valid_other_frame_count = 0U;
+volatile uint8_t imu_last_valid_upload_id = 0U;
+volatile uint8_t imu_last_valid_upload_len = 0U;
+volatile uint32_t imu_parser_state_reset_count = 0U;
+volatile uint32_t imu_attitude_miss_while_run_count = 0U;
+volatile uint8_t imu_run_source_state = 0U;
 
 static atk_ms901m_attitude_data_t s_latest_attitude;
 static uint8_t s_attitude_available = 0U;
@@ -72,6 +81,7 @@ static void Atk_UpdateAttitudeFromFrame(const atk_ms901m_frame_t *frame)
         (((uint16_t)frame->dat[5] << 8) | frame->dat[4])) /
         32768.0f * 180.0f;
 
+    gyro_yaw_parser_dbg = s_latest_attitude.yaw;
     s_attitude_available = 1U;
     gyro_latest_valid = 1U;
     gyro_attitude_ok_count++;
@@ -98,6 +108,7 @@ static void Atk_PollParserFeed(uint8_t byte)
                 s_frame.head_l = byte;
                 s_checksum = byte;
             } else {
+                imu_parser_state_reset_count++;
                 s_state = 0U;
             }
             break;
@@ -115,6 +126,7 @@ static void Atk_PollParserFeed(uint8_t byte)
             s_dat_index = 0U;
 
             if (s_frame.len > ATK_MS901M_FRAME_DAT_MAX_LEN) {
+                imu_parser_state_reset_count++;
                 s_state = 0U;
             } else if (s_frame.len == 0U) {
                 s_state = 5U;
@@ -140,13 +152,22 @@ static void Atk_PollParserFeed(uint8_t byte)
 
             if (s_checksum == s_frame.sum) {
                 gyro_frame_ok_count++;
-                if (s_frame.head_h == ATK_MS901M_FRAME_ID_TYPE_UPLOAD &&
-                    s_frame.id == ATK_MS901M_FRAME_ID_ATTITUDE &&
-                    s_frame.len == 6U) {
-                    Atk_UpdateAttitudeFromFrame(&s_frame);
+                if (s_frame.head_h == ATK_MS901M_FRAME_ID_TYPE_UPLOAD) {
+                    imu_valid_upload_frame_count++;
+                    imu_last_valid_upload_id = s_frame.id;
+                    imu_last_valid_upload_len = s_frame.len;
+
+                    if (s_frame.id == ATK_MS901M_FRAME_ID_ATTITUDE &&
+                        s_frame.len == 6U) {
+                        imu_valid_attitude_frame_count++;
+                        Atk_UpdateAttitudeFromFrame(&s_frame);
+                    } else {
+                        imu_valid_other_frame_count++;
+                    }
                 }
             } else {
                 gyro_frame_checksum_error++;
+                imu_parser_state_reset_count++;
             }
 
             s_state = (byte == ATK_MS901M_FRAME_HEAD_L) ? 1U : 0U;
@@ -154,6 +175,7 @@ static void Atk_PollParserFeed(uint8_t byte)
             break;
 
         default:
+            imu_parser_state_reset_count++;
             s_state = 0U;
             break;
     }

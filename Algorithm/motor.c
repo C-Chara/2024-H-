@@ -18,6 +18,7 @@ volatile uint16_t motor_right_compare = MOTOR_PWM_PERIOD_COUNT;
 volatile uint8_t motor_stby_state = 0U;
 volatile uint8_t motor_left_dir = MOTOR_DIR_STOP;
 volatile uint8_t motor_right_dir = MOTOR_DIR_STOP;
+volatile uint8_t motor_output_enabled_dbg = 1U;
 
 static int16_t Motor_ClampSpeed(int16_t speed)
 {
@@ -111,8 +112,13 @@ void Motor_SetLeft(int16_t speed)
     int16_t limited_speed = Motor_ClampSpeed(speed);
 
     motor_left_cmd = limited_speed;
-    Motor_SetLeftDirection(limited_speed);
-    Motor_WriteLeftPwm(limited_speed);
+    if (motor_output_enabled_dbg != 0U) {
+        Motor_SetLeftDirection(limited_speed);
+        Motor_WriteLeftPwm(limited_speed);
+    } else {
+        Motor_SetLeftDirection(0);
+        Motor_WriteLeftPwm(0);
+    }
 }
 
 void Motor_SetRight(int16_t speed)
@@ -120,8 +126,13 @@ void Motor_SetRight(int16_t speed)
     int16_t limited_speed = Motor_ClampSpeed(speed);
 
     motor_right_cmd = limited_speed;
-    Motor_SetRightDirection(limited_speed);
-    Motor_WriteRightPwm(limited_speed);
+    if (motor_output_enabled_dbg != 0U) {
+        Motor_SetRightDirection(limited_speed);
+        Motor_WriteRightPwm(limited_speed);
+    } else {
+        Motor_SetRightDirection(0);
+        Motor_WriteRightPwm(0);
+    }
 }
 
 void Motor_Stop(void)

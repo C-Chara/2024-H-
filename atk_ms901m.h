@@ -53,6 +53,15 @@ extern volatile uint8_t gyro_last_frame_type;
 extern volatile uint8_t gyro_last_frame_len;
 extern volatile uint32_t gyro_poll_count;
 extern volatile uint8_t gyro_latest_valid;
+extern volatile float gyro_yaw_parser_dbg;
+extern volatile uint32_t imu_valid_upload_frame_count;
+extern volatile uint32_t imu_valid_attitude_frame_count;
+extern volatile uint32_t imu_valid_other_frame_count;
+extern volatile uint8_t imu_last_valid_upload_id;
+extern volatile uint8_t imu_last_valid_upload_len;
+extern volatile uint32_t imu_parser_state_reset_count;
+extern volatile uint32_t imu_attitude_miss_while_run_count;
+extern volatile uint8_t imu_run_source_state;
 
 uint8_t atk_ms901m_init(uint32_t baudrate);
 uint8_t atk_ms901m_read_reg_by_id(uint8_t id, uint8_t *dat, uint32_t timeout);
